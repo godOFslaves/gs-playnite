@@ -19,6 +19,9 @@ using System.Runtime.InteropServices;
 // COM, set the ComVisible attribute to true on that type.
 [assembly: ComVisible(false)]
 
+// Allow test project to access internal members (e.g. GsApiClient(HttpClient) constructor)
+[assembly: InternalsVisibleTo("GsPlugin.Tests")]
+
 // The following GUID is for the ID of the typelib if this project is exposed to COM
 [assembly: Guid("32975fed-6915-4dd3-a230-030cdc5265ae")]
 

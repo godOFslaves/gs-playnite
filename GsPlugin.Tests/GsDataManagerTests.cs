@@ -91,44 +91,6 @@ namespace GsPlugin.Tests {
         }
 
         [Fact]
-        public void DequeuePendingScrobbles_ReturnsAllItemsAndClearsQueue() {
-            var tempDir = CreateTempDir();
-            try {
-                GsDataManager.Initialize(tempDir, null);
-                GsDataManager.Data.PendingScrobbles.Clear();
-
-                GsDataManager.EnqueuePendingScrobble(new PendingScrobble { Type = "start", QueuedAt = DateTime.UtcNow });
-                GsDataManager.EnqueuePendingScrobble(new PendingScrobble { Type = "finish", QueuedAt = DateTime.UtcNow });
-
-                var dequeued = GsDataManager.DequeuePendingScrobbles();
-
-                Assert.Equal(2, dequeued.Count);
-                Assert.Equal("start", dequeued[0].Type);
-                Assert.Equal("finish", dequeued[1].Type);
-                Assert.Empty(GsDataManager.Data.PendingScrobbles);
-            }
-            finally {
-                Directory.Delete(tempDir, true);
-            }
-        }
-
-        [Fact]
-        public void DequeuePendingScrobbles_EmptyQueue_ReturnsEmptyList() {
-            var tempDir = CreateTempDir();
-            try {
-                GsDataManager.Initialize(tempDir, null);
-                GsDataManager.Data.PendingScrobbles.Clear();
-
-                var dequeued = GsDataManager.DequeuePendingScrobbles();
-
-                Assert.Empty(dequeued);
-            }
-            finally {
-                Directory.Delete(tempDir, true);
-            }
-        }
-
-        [Fact]
         public void Initialize_GeneratesInstallId_WhenNotPresent() {
             var tempDir = CreateTempDir();
             try {
@@ -469,6 +431,96 @@ namespace GsPlugin.Tests {
                 GsDataManager.PerformOptOut();
 
                 Assert.Null(GsDataManager.Data.InstallToken);
+            }
+            finally {
+                Directory.Delete(tempDir, true);
+            }
+        }
+        [Fact]
+        public void MutateAndSave_AtomicallyUpdatesMultipleFields() {
+            var tempDir = CreateTempDir();
+            try {
+                GsDataManager.Initialize(tempDir, null);
+
+                GsDataManager.MutateAndSave(d => {
+                    d.LastLibraryHash = "abc123";
+                    d.LastSyncGameCount = 42;
+                    d.SyncCooldownExpiresAt = null;
+                });
+
+                Assert.Equal("abc123", GsDataManager.Data.LastLibraryHash);
+                Assert.Equal(42, GsDataManager.Data.LastSyncGameCount);
+                Assert.Null(GsDataManager.Data.SyncCooldownExpiresAt);
+
+                // Verify persisted to disk by re-loading
+                GsDataManager.Initialize(tempDir, null);
+                Assert.Equal("abc123", GsDataManager.Data.LastLibraryHash);
+                Assert.Equal(42, GsDataManager.Data.LastSyncGameCount);
+            }
+            finally {
+                Directory.Delete(tempDir, true);
+            }
+        }
+
+        [Fact]
+        public void PeekPendingScrobbles_ReturnsSnapshotWithoutRemoving() {
+            var tempDir = CreateTempDir();
+            try {
+                GsDataManager.Initialize(tempDir, null);
+                GsDataManager.EnqueuePendingScrobble(new PendingScrobble {
+                    Type = "start",
+                    QueuedAt = DateTime.UtcNow
+                });
+
+                var peeked = GsDataManager.PeekPendingScrobbles();
+                Assert.Single(peeked);
+
+                // Items should still be in the queue
+                var peekedAgain = GsDataManager.PeekPendingScrobbles();
+                Assert.Single(peekedAgain);
+            }
+            finally {
+                Directory.Delete(tempDir, true);
+            }
+        }
+
+        [Fact]
+        public void RemovePendingScrobble_RemovesSingleItemAndPersists() {
+            var tempDir = CreateTempDir();
+            try {
+                GsDataManager.Initialize(tempDir, null);
+                var item1 = new PendingScrobble { Type = "start", QueuedAt = DateTime.UtcNow };
+                var item2 = new PendingScrobble { Type = "finish", QueuedAt = DateTime.UtcNow };
+                GsDataManager.EnqueuePendingScrobble(item1);
+                GsDataManager.EnqueuePendingScrobble(item2);
+
+                Assert.Equal(2, GsDataManager.PeekPendingScrobbles().Count);
+
+                GsDataManager.RemovePendingScrobble(item1);
+                var remaining = GsDataManager.PeekPendingScrobbles();
+                Assert.Single(remaining);
+                Assert.Equal("finish", remaining[0].Type);
+
+                // Verify persisted to disk
+                GsDataManager.Initialize(tempDir, null);
+                Assert.Single(GsDataManager.PeekPendingScrobbles());
+            }
+            finally {
+                Directory.Delete(tempDir, true);
+            }
+        }
+
+        [Fact]
+        public void RotateInstallId_ClearsShownNotificationIds() {
+            var tempDir = CreateTempDir();
+            try {
+                GsDataManager.Initialize(tempDir, null);
+                GsDataManager.RecordShownNotifications(new List<string> { "n1", "n2" }, 100);
+                Assert.Equal(2, GsDataManager.GetShownNotificationIds().Count);
+
+                GsDataManager.RotateInstallId();
+
+                Assert.Empty(GsDataManager.GetShownNotificationIds());
             }
             finally {
                 Directory.Delete(tempDir, true);

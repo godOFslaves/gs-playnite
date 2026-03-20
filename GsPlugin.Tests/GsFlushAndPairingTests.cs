@@ -76,14 +76,14 @@ namespace GsPlugin.Tests {
                 FlushAttempts = 2
             });
 
-            // Dequeue (simulates what FlushPendingScrobblesAsync does)
-            var dequeued = GsDataManager.DequeuePendingScrobbles();
-            Assert.Single(dequeued);
-            Assert.Equal(2, dequeued[0].FlushAttempts);
+            // Peek (simulates what FlushPendingScrobblesAsync does — peek-then-remove pattern)
+            var peeked = GsDataManager.PeekPendingScrobbles();
+            Assert.Single(peeked);
+            Assert.Equal(2, peeked[0].FlushAttempts);
 
-            // Increment and re-enqueue (simulates a failed flush)
-            dequeued[0].FlushAttempts++;
-            GsDataManager.EnqueuePendingScrobble(dequeued[0]);
+            // Increment attempt count and persist (simulates a failed flush)
+            peeked[0].FlushAttempts++;
+            GsDataManager.Save();
 
             // Verify
             Assert.Single(GsDataManager.Data.PendingScrobbles);
