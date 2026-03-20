@@ -22,6 +22,12 @@ namespace GsPlugin.Services {
         private Plugin _cachedPlugin;
         private bool _pluginSearched;
 
+        // Cached reflection members — resolved once per plugin lifetime, not per game.
+        private PropertyInfo _dbPropInfo;
+        private MethodInfo _getMethodInfo;
+        private object _cachedDb;
+        private bool _reflectionResolved;
+
         public GsSuccessStoryHelper(IPlayniteAPI api) {
             _api = api;
         }
@@ -41,28 +47,12 @@ namespace GsPlugin.Services {
         /// </summary>
         public List<AchievementItem> GetAchievements(Guid gameId) {
             try {
-                var plugin = GetSuccessStoryPlugin();
-                if (plugin == null) {
+                var db = ResolveDatabase();
+                if (db == null || _getMethodInfo == null) {
                     return null;
                 }
 
-                var dbProp = plugin
-                    .GetType()
-                    .GetProperty("PluginDatabase", BindingFlags.Public | BindingFlags.Instance);
-                var db = dbProp?.GetValue(plugin);
-                if (db == null) {
-                    return null;
-                }
-
-                var getMethod = db.GetType()
-                    .GetMethod(
-                        "Get",
-                        BindingFlags.Public | BindingFlags.Instance,
-                        null,
-                        new[] { typeof(Guid), typeof(bool), typeof(bool) },
-                        null
-                    );
-                var ga = getMethod?.Invoke(db, new object[] { gameId, true, false });
+                var ga = _getMethodInfo.Invoke(db, new object[] { gameId, true, false });
                 if (ga == null) {
                     return null;
                 }
@@ -130,28 +120,12 @@ namespace GsPlugin.Services {
 
         private (int unlocked, int total)? GetAchievementCounts(Guid gameId) {
             try {
-                var plugin = GetSuccessStoryPlugin();
-                if (plugin == null) {
+                var db = ResolveDatabase();
+                if (db == null || _getMethodInfo == null) {
                     return null;
                 }
 
-                var dbProp = plugin
-                    .GetType()
-                    .GetProperty("PluginDatabase", BindingFlags.Public | BindingFlags.Instance);
-                var db = dbProp?.GetValue(plugin);
-                if (db == null) {
-                    return null;
-                }
-
-                var getMethod = db.GetType()
-                    .GetMethod(
-                        "Get",
-                        BindingFlags.Public | BindingFlags.Instance,
-                        null,
-                        new[] { typeof(Guid), typeof(bool), typeof(bool) },
-                        null
-                    );
-                var ga = getMethod?.Invoke(db, new object[] { gameId, true, false });
+                var ga = _getMethodInfo.Invoke(db, new object[] { gameId, true, false });
                 if (ga == null) {
                     return null;
                 }
@@ -187,6 +161,30 @@ namespace GsPlugin.Services {
             _pluginSearched = true;
             _cachedPlugin = _api.Addons.Plugins.FirstOrDefault(p => p.Id == SuccessStoryId);
             return _cachedPlugin;
+        }
+
+        /// <summary>
+        /// Resolves and caches PluginDatabase property and Get method via reflection.
+        /// Called once; subsequent calls return the cached members.
+        /// Returns the database object, or null if resolution fails.
+        /// </summary>
+        private object ResolveDatabase() {
+            if (_reflectionResolved) return _cachedDb;
+            _reflectionResolved = true;
+
+            var plugin = GetSuccessStoryPlugin();
+            if (plugin == null) return null;
+
+            _dbPropInfo = plugin.GetType()
+                .GetProperty("PluginDatabase", BindingFlags.Public | BindingFlags.Instance);
+            _cachedDb = _dbPropInfo?.GetValue(plugin);
+            if (_cachedDb == null) return null;
+
+            _getMethodInfo = _cachedDb.GetType()
+                .GetMethod("Get", BindingFlags.Public | BindingFlags.Instance, null,
+                    new[] { typeof(Guid), typeof(bool), typeof(bool) }, null);
+
+            return _cachedDb;
         }
     }
 }

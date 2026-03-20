@@ -22,6 +22,11 @@ namespace GsPlugin.Services {
         private Plugin _cachedPlugin;
         private bool _pluginSearched;
 
+        // Cached reflection members — resolved once per plugin lifetime, not per game.
+        private MethodInfo _getGameDataMethod;
+        private object _cachedManager;
+        private bool _reflectionResolved;
+
         public GsPlayniteAchievementsHelper(IPlayniteAPI api) {
             _api = api;
         }
@@ -45,30 +50,12 @@ namespace GsPlugin.Services {
         /// </summary>
         public List<AchievementItem> GetAchievements(Guid gameId) {
             try {
-                var plugin = GetPlugin();
-                if (plugin == null) {
+                var mgr = ResolveManager();
+                if (mgr == null || _getGameDataMethod == null) {
                     return null;
                 }
 
-                // Access plugin.AchievementManager
-                var mgrProp = plugin
-                    .GetType()
-                    .GetProperty("AchievementManager", BindingFlags.Public | BindingFlags.Instance);
-                var mgr = mgrProp?.GetValue(plugin);
-                if (mgr == null) {
-                    return null;
-                }
-
-                // Call AchievementManager.GetGameAchievementData(Guid)
-                var getMethod = mgr.GetType()
-                    .GetMethod(
-                        "GetGameAchievementData",
-                        BindingFlags.Public | BindingFlags.Instance,
-                        null,
-                        new[] { typeof(Guid) },
-                        null
-                    );
-                var gameData = getMethod?.Invoke(mgr, new object[] { gameId });
+                var gameData = _getGameDataMethod.Invoke(mgr, new object[] { gameId });
                 if (gameData == null) {
                     return null;
                 }
@@ -154,6 +141,29 @@ namespace GsPlugin.Services {
             _pluginSearched = true;
             _cachedPlugin = _api.Addons.Plugins.FirstOrDefault(p => p.Id == PlayniteAchievementsId);
             return _cachedPlugin;
+        }
+
+        /// <summary>
+        /// Resolves and caches AchievementManager and GetGameAchievementData method via reflection.
+        /// Returns the manager object, or null if resolution fails.
+        /// </summary>
+        private object ResolveManager() {
+            if (_reflectionResolved) return _cachedManager;
+            _reflectionResolved = true;
+
+            var plugin = GetPlugin();
+            if (plugin == null) return null;
+
+            var mgrProp = plugin.GetType()
+                .GetProperty("AchievementManager", BindingFlags.Public | BindingFlags.Instance);
+            _cachedManager = mgrProp?.GetValue(plugin);
+            if (_cachedManager == null) return null;
+
+            _getGameDataMethod = _cachedManager.GetType()
+                .GetMethod("GetGameAchievementData", BindingFlags.Public | BindingFlags.Instance, null,
+                    new[] { typeof(Guid) }, null);
+
+            return _cachedManager;
         }
     }
 }
