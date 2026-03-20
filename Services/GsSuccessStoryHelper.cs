@@ -6,6 +6,7 @@ using System.Reflection;
 using Playnite.SDK;
 using Playnite.SDK.Plugins;
 using GsPlugin.Infrastructure;
+using Sentry;
 
 namespace GsPlugin.Services {
     /// <summary>
@@ -96,6 +97,14 @@ namespace GsPlugin.Services {
 
                 return result.Count > 0 ? result : null;
             }
+            catch (TargetInvocationException ex) {
+                GsSentry.AddBreadcrumb(
+                    message: $"[GsSuccessStoryHelper] TargetInvocationException in GetAchievements for game {gameId}: {ex.InnerException?.Message ?? ex.Message}",
+                    category: "achievement",
+                    level: BreadcrumbLevel.Warning);
+                GsLogger.Warn($"[GsSuccessStoryHelper] Achievement details lookup failed for game {gameId}: {ex.InnerException?.Message ?? ex.Message}");
+                return null;
+            }
             catch (Exception ex) {
                 GsLogger.Warn(
                     $"[GsSuccessStoryHelper] Achievement details lookup failed for game {gameId}: {ex.Message}"
@@ -152,6 +161,15 @@ namespace GsPlugin.Services {
                 var items = gaType.GetProperty("Items")?.GetValue(ga) as ICollection;
                 var total = items?.Count ?? 0;
                 return total > 0 ? (unlocked, total) : ((int, int)?)null;
+            }
+            catch (TargetInvocationException ex) {
+                // Reflection call succeeded but the method threw — likely an API change in SuccessStory.
+                GsSentry.AddBreadcrumb(
+                    message: $"[GsSuccessStoryHelper] TargetInvocationException in GetAchievementCounts for game {gameId}: {ex.InnerException?.Message ?? ex.Message}",
+                    category: "achievement",
+                    level: BreadcrumbLevel.Warning);
+                GsLogger.Warn($"[GsSuccessStoryHelper] Achievement lookup failed for game {gameId}: {ex.InnerException?.Message ?? ex.Message}");
+                return null;
             }
             catch (Exception ex) {
                 GsLogger.Warn(

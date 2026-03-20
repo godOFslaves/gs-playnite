@@ -64,6 +64,8 @@ namespace GsPlugin.Infrastructure {
                     options.IsGlobalModeEnabled = false;
                     options.DiagnosticLevel = SentryLevel.Warning;
                     options.AttachStacktrace = true;
+                    // Cap breadcrumb buffer to reduce per-session memory overhead.
+                    options.MaxBreadcrumbs = 50;
 
                     // Filter out events that don't originate from our plugin.
                     // Without this, Sentry's global hooks capture unhandled exceptions

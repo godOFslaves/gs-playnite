@@ -453,5 +453,8 @@ namespace GsPlugin.Tests {
 
         public Task<string> GetDashboardToken() =>
             Task.FromResult("mock-dashboard-token");
+
+        public Task<PlayniteNotificationsRes> GetNotifications() =>
+            Task.FromResult(new PlayniteNotificationsRes());
     }
 }

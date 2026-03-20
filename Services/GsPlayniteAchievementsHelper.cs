@@ -6,6 +6,7 @@ using System.Reflection;
 using Playnite.SDK;
 using Playnite.SDK.Plugins;
 using GsPlugin.Infrastructure;
+using Sentry;
 
 namespace GsPlugin.Services {
     /// <summary>
@@ -113,6 +114,14 @@ namespace GsPlugin.Services {
                 }
 
                 return result.Count > 0 ? result : null;
+            }
+            catch (TargetInvocationException ex) {
+                GsSentry.AddBreadcrumb(
+                    message: $"[GsPlayniteAchievementsHelper] TargetInvocationException in GetAchievements for game {gameId}: {ex.InnerException?.Message ?? ex.Message}",
+                    category: "achievement",
+                    level: BreadcrumbLevel.Warning);
+                GsLogger.Warn($"[GsPlayniteAchievementsHelper] Achievement lookup failed for game {gameId}: {ex.InnerException?.Message ?? ex.Message}");
+                return null;
             }
             catch (Exception ex) {
                 GsLogger.Warn(

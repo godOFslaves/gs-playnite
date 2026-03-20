@@ -73,15 +73,23 @@ namespace GsPlugin.Services {
             }
 
             // Marshal notification display onto the UI dispatcher to avoid cross-thread exceptions.
-            Application.Current.Dispatcher.Invoke(() => {
-                foreach (var (id, type, message, action) in toShow) {
-                    _playniteApi.Notifications.Add(new NotificationMessage(
-                        NotifIdPrefix + id,
-                        message,
-                        type,
-                        action));
-                }
-            });
+            // Wrapped in try/catch so a dispatcher fault cannot surface as an unhandled exception
+            // that would be captured by Sentry as a false plugin error.
+            try {
+                Application.Current.Dispatcher.Invoke(() => {
+                    foreach (var (id, type, message, action) in toShow) {
+                        _playniteApi.Notifications.Add(new NotificationMessage(
+                            NotifIdPrefix + id,
+                            message,
+                            type,
+                            action));
+                    }
+                });
+            }
+            catch (Exception ex) {
+                GsLogger.Warn($"GsNotificationService: dispatcher invoke failed: {ex.Message}");
+                return;
+            }
 
             // Atomically record shown IDs and persist under the GsDataManager lock.
             var newIds = toShow.Select(t => t.id).ToList();
