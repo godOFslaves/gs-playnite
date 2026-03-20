@@ -76,6 +76,7 @@ GsPlugin (entry point, IDisposable)
 
 ### Install Token Authentication
 - `GsPlugin.OnApplicationStarted()` kicks off `EnsureInstallTokenAsync()` as a best-effort, fire-and-forget startup task so first-run registration does not block plugin startup.
+- `EnsureInstallTokenAsync()` retries up to 3 times with exponential backoff (2 s, 4 s) for transient network errors; a non-null result (success or known error code) breaks the loop immediately.
 - Each install registers with the server via `/api/playnite/v2/register`, receiving a per-install token stored in `GsData.InstallToken`.
 - Authenticated write calls use the shared `PostJsonAsync()` path, which adds the `x-playnite-token` header when `InstallToken` is present. `RequestDeleteMyData()` and `GetDashboardToken()` also attach this header explicitly.
 - `InstallIdForBody` returns `null` when a token is present, and request DTOs use `JsonIgnore(WhenWritingNull)` on `user_id`, so the server resolves identity from the header instead of the body.
@@ -84,7 +85,7 @@ GsPlugin (entry point, IDisposable)
 - `RotateInstallId()` clears token, linked user, sessions, pending scrobbles, sync hashes, cooldowns, and integration-account hashes before calling `GsSnapshotManager.Reset()`.
 - `SetInstallTokenIfActive()` atomically checks opt-out status before persisting the token, preventing races with `PerformOptOut()`.
 - Deletion requests require a valid `InstallToken`; the server resolves install identity from the `x-playnite-token` header. No `user_id` is sent in the body. `DeleteDataRes.rateLimited` is set when the server returns HTTP 429.
-- `GetDashboardToken()` fetches a short-lived dashboard token used by `MySidebarView` as `?access_token=...`; if token fetch fails for a registered install, the dashboard fails closed instead of falling back to `user_id`.
+- `GetDashboardToken()` sends a POST request with a dashboard context object (`plugin_version`, flags, preferences) in the body. The server stores this context alongside the token and returns it tamper-proof when the frontend resolves the token — eliminating the need for client-side URL query params. If the token fetch fails for a registered install, the dashboard fails closed instead of falling back to `user_id`.
 - `IdentityGeneration` is incremented on fresh-install `InstallID` creation and on `RotateInstallId()`. `GsSnapshotManager` stamps this generation into `gs_snapshot.json` and discards snapshots whose generation no longer matches current data.
 - `ResetInstallToken()` exists on `IGsApiClient`/`GsApiClient`, but the current lost-token recovery path uses local `InstallID` rotation plus re-registration rather than token reset.
 
@@ -93,11 +94,29 @@ GsPlugin (entry point, IDisposable)
 - Runs as fire-and-forget via `FetchNotificationsAfterTokenAsync()` which awaits `EnsureInstallTokenAsync()` first, ensuring the install token is available before fetching. Never blocks the startup critical path.
 - Auth: `x-playnite-token` header only — no `user_id`/`install_id` fallback.
 - `GetNotifications()` in `GsApiClient` intentionally bypasses the shared circuit breaker so notification failures cannot affect core sync/scrobble paths.
-- UI thread safety: notifications are collected on the background thread, then marshaled onto `Application.Current.Dispatcher.Invoke()` for `Notifications.Add()` calls.
+- UI thread safety: notifications are collected on the background thread, then marshaled onto `Application.Current.Dispatcher.Invoke()` for `Notifications.Add()` calls. The dispatcher invoke is wrapped in try/catch so a dispatcher fault does not surface as a false Sentry error.
 - `GsDataManager.GetShownNotificationIds()` returns a lock-protected snapshot; `RecordShownNotifications()` atomically appends and persists under `_lock`, preventing cross-thread races with concurrent startup writes.
 - `ShownNotificationIds` is capped at 100 entries and cleared on `RotateInstallId()` alongside other identity-bound state.
 - Action URL handling: `gs://settings` opens plugin settings via `OpenPluginSettings(Id)`, `gs://addons` opens the add-ons dialog, `https://` URLs are opened in the browser but only for trusted hosts (`gamescrobbler.com`, `playnite.link`). Plain `http://` and untrusted hosts are rejected.
 - Two user-facing settings (`ShowUpdateNotifications`, `ShowImportantNotifications`) control whether update and server notifications appear. Both default to `true` and are synced to `GsData` via `GsPluginSettingsViewModel.EndEdit()` and `LoadExistingSettings()`.
+
+### Pending Scrobble Flush
+- Flush uses a peek-then-remove strategy: `PeekPendingScrobbles()` returns a snapshot without clearing, each item stays on disk until its send is confirmed, then `RemovePendingScrobble()` removes it atomically. A mid-flush crash loses nothing.
+- `_flushInFlight` Interlocked guard prevents concurrent flush invocations (circuit recovery + periodic timer + startup can overlap).
+- Failed items stay in the queue with an incremented `FlushAttempts` counter (persisted via `Save()`) and are dropped after `MaxFlushAttempts` (5).
+- A periodic 5-minute timer (`_pendingFlushTimer`) retries queued scrobbles independently of circuit breaker recovery. Disposed in `Dispose()`.
+
+### Startup Flow
+- Plugin refresh (`RefreshAllowedPluginsAsync`) and update check (`CheckForUpdateAsync`) run in parallel via `Task.WhenAll` — they are independent network calls.
+- Pending scrobble flush is fire-and-forget so library sync starts immediately; the periodic timer catches remaining items.
+- First-run detection: when `LastSyncAt` is null and `InstallToken` is empty, progress notifications guide the user through initial setup.
+- `startup_completed` PostHog event captures elapsed time and sync result for startup performance tracking.
+
+### Sidebar Dashboard
+- `MySidebarView` constructor takes only `IGsApiClient` — plugin version and flags are sent server-side via the dashboard token POST body.
+- Dashboard URL passes only `theme` as a query param (cosmetic, needed for instant rendering); all other context is tamper-proof via the token.
+- Auto-refreshes the dashboard token when the sidebar becomes visible after 8+ minutes (tokens have a 10-minute TTL).
+- Handles `gs:refresh-token` postMessage from the frontend for manual retry when the session expires.
 
 ### Achievement Provider Architecture
 Achievement data comes from two optional addons via an aggregator pattern:
@@ -105,6 +124,12 @@ Achievement data comes from two optional addons via an aggregator pattern:
 - `GsSuccessStoryHelper` — reads from SuccessStory addon via reflection (priority 1)
 - `GsPlayniteAchievementsHelper` — reads from Playnite Achievements addon via reflection (priority 2)
 - `GsAchievementAggregator` — iterates providers in order; first with data wins. Skips `(0, 0)` results to allow fallback.
+- Both providers catch `TargetInvocationException` separately (reflection call succeeded but the addon method threw) with Sentry breadcrumbs for diagnostics.
+
+### Settings UI & Localization
+- Settings view uses localized strings from `Localization/en_US.xaml` resource dictionary, organized into card-based sections.
+- `GsDataManager.DiagnosticsStateChanged` event fires (outside the lock) when install-token or pending-scrobble state changes; the settings UI subscribes for live status updates.
+- `GsPluginSettingsViewModel` exposes diagnostic properties: `IsInstallTokenActive`, `PendingScrobbleCount`, `HasPendingScrobbles`.
 
 ### Test Project
 - **GsPlugin.Tests/** — xUnit test project (SDK-style .csproj, net462)
@@ -137,6 +162,7 @@ Hook scripts in `hooks/` are installed to `.git/hooks/` via `scripts/setup-hooks
 - After building, the extension folder in `%APPDATA%\Playnite\Extensions\<plugin-guid>\` must contain the updated DLLs. Stale DLLs from a previous version will cause `FileNotFoundException` at runtime.
 - `GsSentry` methods (`CaptureException`, `CaptureMessage`, `AddBreadcrumb`) use `GsDataManager.DataOrNull` instead of `GsDataManager.Data` to avoid a circular crash when called during `GsDataManager.Initialize()` before `_data` is assigned.
 - All `SentrySdk` calls are wrapped in try/catch so the plugin continues working if the Sentry SDK is unavailable (e.g., expired account). `GsApiClient` similarly falls back to a plain `HttpClient` if `SentryHttpMessageHandler` throws.
+- `MaxBreadcrumbs` is capped at 50 (default 100) to reduce per-session memory overhead.
 
 ### Playnite SDK Type Gotchas
 - `Game.Playtime` and `Game.PlayCount` are `ulong` — cast explicitly to `long`/`int` when assigning to DTO fields (no implicit conversion).
