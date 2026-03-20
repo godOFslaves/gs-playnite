@@ -38,7 +38,9 @@ if ($formatExitCode -ne 0) {
     $resultText = $formatResult | Out-String
     if ($resultText -match "Unhandled exception" -or $resultText -match "TypeInitializationException" -or $resultText -match "BuildHost") {
         Write-Host "Warning: dotnet format crashed (MSBuild workspace loader issue)." -ForegroundColor Yellow
-        Write-Host "Skipping format check -run 'scripts/format-code.ps1' manually if needed." -ForegroundColor Yellow
+        Write-Host "Run 'scripts/format-code.ps1' manually to verify formatting." -ForegroundColor Yellow
+        Write-Host "Failing pre-commit check to prevent unformatted code from slipping through." -ForegroundColor Red
+        exit 1
     } else {
         Write-Host "" -ForegroundColor White
         Write-Host "============================================" -ForegroundColor Red

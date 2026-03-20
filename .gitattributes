@@ -1,0 +1,22 @@
+# Enforce CRLF line endings for all text files (matches .editorconfig end_of_line = crlf)
+* text=auto eol=crlf
+
+# Ensure these are always treated as text
+*.cs text eol=crlf
+*.xaml text eol=crlf
+*.csproj text eol=crlf
+*.sln text eol=crlf
+*.config text eol=crlf
+*.json text eol=crlf
+*.yaml text eol=crlf
+*.yml text eol=crlf
+*.md text eol=crlf
+*.ps1 text eol=crlf
+*.editorconfig text eol=crlf
+
+# Binary files
+*.png binary
+*.ico binary
+*.dll binary
+*.exe binary
+*.zip binary

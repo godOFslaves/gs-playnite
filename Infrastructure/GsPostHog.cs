@@ -14,7 +14,6 @@ namespace GsPlugin.Infrastructure {
         private static readonly ILogger _logger = LogManager.GetLogger();
         private static PostHogClient _client;
 
-        // TODO: Replace with your actual PostHog project API key
         private const string ApiKey = "phc_la6sOuOYr4cEb9Rpq27MMi6Mv8EhCLsVi6ovp6azdSi";
         private const string HostUrl = "https://eu.i.posthog.com";
 

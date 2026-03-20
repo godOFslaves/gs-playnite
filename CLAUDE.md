@@ -26,7 +26,8 @@ GsPlugin.cs              — Entry point (namespace: GsPlugin)
 │
 ├── Api/                 — namespace: GsPlugin.Api
 │   ├── ApiResult.cs         — Generic API result wrapper
-│   ├── GsApiClient.cs       — HTTP API client; defines GameSyncDto and all DTOs
+│   ├── Dtos.cs              — All API request/response DTOs (namespace-level, not nested)
+│   ├── GsApiClient.cs       — HTTP API client
 │   ├── IGsApiClient.cs      — API client interface
 │   └── GsCircuitBreaker.cs  — Circuit breaker with exponential backoff
 │
@@ -141,10 +142,17 @@ Achievement data comes from two optional addons via an aggregator pattern:
 - Targets .NET Framework 4.6.2 (old-style .csproj — requires Visual Studio MSBuild, not `dotnet build`)
 - XAML code-gen (WPF `PresentationBuildTasks`) requires the full `MSBuild.exe` from VS Build Tools or a full VS install; `dotnet msbuild` does **not** generate `.g.cs` files for old-style WPF projects, so View code-behind will fail to compile without it
 - Test project uses SDK-style .csproj and can be built/run with `dotnet test`
-- API endpoints: Debug → `api.stage.gamescrobbler.com`, Release → `api.gamescrobbler.com`
+- API endpoints: Debug → `api.stage.gamescrobbler.com`, Release → `api.gamescrobbler.com` (controlled via `#if DEBUG` in `GsApiClient.cs`)
 - When upgrading NuGet packages, only upgrade to versions that explicitly ship a `net462` (or `net461`/`net45`) lib folder. Do not rely on netstandard2.0 fallbacks for core runtime packages.
 
 ## Important Notes
+
+### Thread-Safe Data Mutations
+- Use `GsDataManager.MutateAndSave(d => { ... })` instead of directly modifying `GsDataManager.Data` fields followed by `GsDataManager.Save()`. The `MutateAndSave` method acquires the lock, executes the action, and persists atomically — preventing concurrent threads from interleaving mutations.
+- Direct field access via `GsDataManager.Data` is still available for reads, but all write-then-save sequences should use `MutateAndSave`.
+
+### API DTOs
+- All API request/response DTOs live in `Api/Dtos.cs` at namespace level (`GsPlugin.Api`), not nested inside `GsApiClient`. Reference them directly (e.g., `new ScrobbleStartReq { ... }`) — no `GsApiClient.` prefix needed.
 
 ### Code Formatting
 All code must be formatted with `dotnet format` before commits. The pre-commit hook checks with `--verify-no-changes` and fails if unformatted.
