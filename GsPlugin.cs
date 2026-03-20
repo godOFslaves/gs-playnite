@@ -47,6 +47,7 @@ namespace GsPlugin {
         private GsNotificationService _notificationService;
         private bool _disposed;
         private int _achievementSyncInFlight;
+        private Timer _pendingFlushTimer;
         /// <summary>
         /// Unique identifier for the plugin itself.
         /// </summary>
@@ -169,11 +170,23 @@ namespace GsPlugin {
         /// </summary>
         public override async void OnApplicationStarted(OnApplicationStartedEventArgs args) {
             if (GsDataManager.IsOptedOut) { base.OnApplicationStarted(args); return; }
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            // Detect first run before any async work: no prior sync and no token yet.
+            bool isFirstRun = GsDataManager.Data.LastSyncAt == null
+                && string.IsNullOrEmpty(GsDataManager.Data.InstallToken);
             try {
                 GsPostHog.Capture("plugin_started", new Dictionary<string, object> {
                     { "version", GsSentry.GetPluginVersion() },
-                    { "linked", !string.IsNullOrEmpty(GsDataManager.DataOrNull?.LinkedUserId) }
+                    { "linked", !string.IsNullOrEmpty(GsDataManager.DataOrNull?.LinkedUserId) },
+                    { "first_run", isFirstRun }
                 });
+
+                if (isFirstRun) {
+                    PlayniteApi.Notifications.Add(new NotificationMessage(
+                        "gs-first-run-setup",
+                        "Game Scrobbler: Setting up for the first time\u2026",
+                        NotificationType.Info));
+                }
 
                 // Ensure the install has a server-issued auth token. Best-effort, fire-and-forget:
                 // registration is a one-time step on first boot and must not stall the rest of
@@ -189,31 +202,60 @@ namespace GsPlugin {
                 // Re-check opt-out after token registration (user may have opted out during startup)
                 if (GsDataManager.IsOptedOut) { base.OnApplicationStarted(args); return; }
 
-                // Refresh allowed plugins before syncing library (best-effort, don't block on failure)
-                try {
-                    await _scrobblingService.RefreshAllowedPluginsAsync();
-                }
-                catch (Exception ex) {
-                    _logger.Warn(ex, "Plugin refresh failed, continuing with cached/hardcoded list");
-                }
+                // Run refresh and update check in parallel — they are independent network calls.
+                // Best-effort: failures are logged but do not block library sync.
+                var refreshTask = _scrobblingService.RefreshAllowedPluginsAsync()
+                    .ContinueWith(t => {
+                        if (t.IsFaulted)
+                            _logger.Warn(t.Exception.GetBaseException(), "Plugin refresh failed, continuing with cached/hardcoded list");
+                    });
+                var updateTask = _updateChecker.CheckForUpdateAsync()
+                    .ContinueWith(t => {
+                        if (t.IsFaulted)
+                            _logger.Warn(t.Exception.GetBaseException(), "Update check failed");
+                    });
+                await Task.WhenAll(refreshTask, updateTask);
 
-                // Re-check opt-out after async refresh (user may have opted out during startup)
+                // Re-check opt-out after async steps (user may have opted out during startup)
                 if (GsDataManager.IsOptedOut) { base.OnApplicationStarted(args); return; }
 
-                // Check for plugin updates and notify user if a newer version is available
-                try {
-                    await _updateChecker.CheckForUpdateAsync();
-                }
-                catch (Exception ex) {
-                    _logger.Warn(ex, "Update check failed");
-                }
+                // Flush pending scrobbles fire-and-forget so library sync starts immediately.
+                // The periodic timer below catches any items not flushed by the time it fires.
+                _ = _apiClient.FlushPendingScrobblesAsync().ContinueWith(t => {
+                    if (t.IsFaulted)
+                        _logger.Warn(t.Exception.GetBaseException(), "Startup flush failed");
+                });
 
-                // Flush any scrobbles that were queued during a previous session when the API was unavailable
-                await _apiClient.FlushPendingScrobblesAsync();
+                // Start periodic flush timer — every 5 minutes, retry any remaining queued scrobbles.
+                _pendingFlushTimer = new Timer(_ => {
+                    if (_disposed) return;
+                    var api = _apiClient;
+                    if (api == null || GsDataManager.IsOptedOut) return;
+                    _ = api.FlushPendingScrobblesAsync().ContinueWith(t => {
+                        if (t.IsFaulted)
+                            _logger.Warn(t.Exception?.GetBaseException(), "Periodic pending flush failed");
+                    });
+                }, null, (int)TimeSpan.FromMinutes(5).TotalMilliseconds, (int)TimeSpan.FromMinutes(5).TotalMilliseconds);
 
                 var startupSyncResult = await SyncLibraryWithDiffAsync();
                 if (startupSyncResult == GsScrobblingService.SyncLibraryResult.Cooldown) {
                     _logger.Info("Startup library sync skipped: sync cooldown is still active.");
+                }
+
+                if (isFirstRun) {
+                    PlayniteApi.Notifications.Remove("gs-first-run-setup");
+                    if (startupSyncResult == GsScrobblingService.SyncLibraryResult.Success) {
+                        PlayniteApi.Notifications.Add(new NotificationMessage(
+                            "gs-first-run-done",
+                            "Game Scrobbler: Setup complete \u2014 your library has been synced.",
+                            NotificationType.Info));
+                    }
+                    else if (startupSyncResult == GsScrobblingService.SyncLibraryResult.Error) {
+                        PlayniteApi.Notifications.Add(new NotificationMessage(
+                            "gs-first-run-error",
+                            "Game Scrobbler: First-time sync failed. It will retry automatically on next launch.",
+                            NotificationType.Error));
+                    }
                 }
 
                 // Run achievement sync unless library sync errored.
@@ -222,12 +264,21 @@ namespace GsPlugin {
                 if (startupSyncResult != GsScrobblingService.SyncLibraryResult.Error) {
                     _ = SyncAchievementsWithDiffAsync();
                 }
+
+                sw.Stop();
+                GsPostHog.Capture("startup_completed", new Dictionary<string, object> {
+                    { "elapsed_ms", sw.ElapsedMilliseconds },
+                    { "sync_result", startupSyncResult.ToString() }
+                });
             }
             catch (Exception ex) {
                 _logger.Error(ex, "Unhandled exception in OnApplicationStarted");
                 GsSentry.CaptureException(ex, "Unhandled exception in OnApplicationStarted");
             }
             finally {
+                if (isFirstRun) {
+                    PlayniteApi.Notifications.Remove("gs-first-run-setup");
+                }
                 base.OnApplicationStarted(args);
             }
         }
@@ -330,7 +381,7 @@ namespace GsPlugin {
                 Icon = iconImage,
                 Opened = () => {
                     // Return a new instance of your custom UserControl (WPF)
-                    return new MySidebarView(GsSentry.GetPluginVersion(), _apiClient);
+                    return new MySidebarView(_apiClient);
                 },
             };
         }
@@ -361,7 +412,7 @@ namespace GsPlugin {
                     window.Title = "Game Scrobbler Dashboard";
                     window.Width = 1200;
                     window.Height = 800;
-                    window.Content = new MySidebarView(GsSentry.GetPluginVersion(), _apiClient);
+                    window.Content = new MySidebarView(_apiClient);
                     window.Owner = PlayniteApi.Dialogs.GetCurrentAppWindow();
                     window.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner;
                     window.ShowDialog();
@@ -442,10 +493,21 @@ namespace GsPlugin {
 
             try {
                 _logger.Info("Registering install token with server");
-                var result = await _apiClient.RegisterInstallToken(installId);
+
+                // Retry up to 3 times with exponential backoff (2 s, 4 s) for transient network errors.
+                // A non-null result (success or known error code) breaks the loop immediately.
+                GsApiClient.RegisterInstallTokenRes result = null;
+                for (int attempt = 0; attempt < 3; attempt++) {
+                    if (attempt > 0) {
+                        await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+                    }
+                    result = await _apiClient.RegisterInstallToken(installId);
+                    if (result != null) break;
+                    _logger.Warn($"EnsureInstallTokenAsync: attempt {attempt + 1}/3 returned null");
+                }
 
                 if (result == null) {
-                    _logger.Warn("EnsureInstallTokenAsync: registration call returned null (network error?)");
+                    _logger.Warn("EnsureInstallTokenAsync: all registration attempts failed; will retry on next startup");
                     return;
                 }
 
@@ -550,6 +612,14 @@ namespace GsPlugin {
         public override void Dispose() {
             if (!_disposed) {
                 _disposed = true;
+
+                try {
+                    _pendingFlushTimer?.Dispose();
+                    _pendingFlushTimer = null;
+                }
+                catch (Exception ex) {
+                    _logger.Error(ex, "Error disposing flush timer");
+                }
 
                 try {
                     GsPostHog.Shutdown();

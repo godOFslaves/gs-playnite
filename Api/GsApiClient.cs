@@ -182,61 +182,80 @@ namespace GsPlugin.Api {
         private const int MaxFlushAttempts = 5;
 
         /// <summary>
+        /// Guards against concurrent flush invocations (circuit recovery + periodic timer + startup).
+        /// 0 = idle, 1 = in flight.
+        /// </summary>
+        private int _flushInFlight;
+
+        /// <summary>
         /// Flushes all pending scrobbles that were queued when the API was unavailable.
-        /// Called on circuit breaker recovery and on application startup.
-        /// Failed items are re-queued (up to <see cref="MaxFlushAttempts"/> times) so they survive transient failures.
+        /// Uses a peek-then-remove-on-success strategy so a mid-flush crash never loses items:
+        /// each scrobble stays on disk until its send is confirmed, then is removed atomically.
+        /// Called on circuit breaker recovery, on application startup, and by the periodic timer.
         /// </summary>
         public async Task FlushPendingScrobblesAsync() {
             if (GsDataManager.IsOptedOut) return;
 
-            var pending = GsDataManager.DequeuePendingScrobbles();
-            if (pending == null || pending.Count == 0) {
+            // Prevent concurrent flushes from sending duplicates when two callers overlap
+            // (e.g. circuit-recovery fires while the startup flush or periodic timer is running).
+            if (System.Threading.Interlocked.CompareExchange(ref _flushInFlight, 1, 0) != 0) {
+                _logger.Info("FlushPendingScrobblesAsync already in flight — skipping");
                 return;
             }
 
-            _logger.Info($"Flushing {pending.Count} pending scrobble(s)");
-            var failed = new List<PendingScrobble>();
-
-            foreach (var item in pending) {
-                // Re-check opt-out before each send (user may have opted out mid-flush)
-                if (GsDataManager.IsOptedOut) break;
-
-                bool success = false;
-                try {
-                    if (item.Type == "start" && item.StartData != null) {
-                        var res = await StartGameSession(item.StartData);
-                        success = res != null;
-                    }
-                    else if (item.Type == "finish" && item.FinishData != null) {
-                        var res = await FinishGameSession(item.FinishData);
-                        success = res != null;
-                    }
-                    else {
-                        _logger.Warn($"Dropping invalid pending scrobble (type={item.Type})");
-                        continue;
-                    }
-                }
-                catch (Exception ex) {
-                    _logger.Error(ex, $"Exception flushing pending scrobble (type={item.Type}, queued={item.QueuedAt:O})");
+            try {
+                // Peek without clearing: items remain persisted until individually confirmed.
+                var pending = GsDataManager.PeekPendingScrobbles();
+                if (pending == null || pending.Count == 0) {
+                    return;
                 }
 
-                if (!success) {
-                    item.FlushAttempts++;
-                    if (item.FlushAttempts >= MaxFlushAttempts) {
-                        _logger.Warn($"Dropping pending scrobble after {item.FlushAttempts} failed flush attempts (type={item.Type}, queued={item.QueuedAt:O})");
+                _logger.Info($"Flushing {pending.Count} pending scrobble(s)");
+
+                foreach (var item in pending) {
+                    // Re-check opt-out before each send (user may have opted out mid-flush)
+                    if (GsDataManager.IsOptedOut) break;
+
+                    bool success = false;
+                    try {
+                        if (item.Type == "start" && item.StartData != null) {
+                            var res = await StartGameSession(item.StartData);
+                            success = res != null;
+                        }
+                        else if (item.Type == "finish" && item.FinishData != null) {
+                            var res = await FinishGameSession(item.FinishData);
+                            success = res != null;
+                        }
+                        else {
+                            _logger.Warn($"Dropping invalid pending scrobble (type={item.Type})");
+                            GsDataManager.RemovePendingScrobble(item);
+                            continue;
+                        }
+                    }
+                    catch (Exception ex) {
+                        _logger.Error(ex, $"Exception flushing pending scrobble (type={item.Type}, queued={item.QueuedAt:O})");
+                    }
+
+                    if (success) {
+                        // Remove from the persisted queue now that the server has accepted it.
+                        GsDataManager.RemovePendingScrobble(item);
                     }
                     else {
-                        failed.Add(item);
+                        item.FlushAttempts++;
+                        if (item.FlushAttempts >= MaxFlushAttempts) {
+                            _logger.Warn($"Dropping pending scrobble after {item.FlushAttempts} failed flush attempts (type={item.Type}, queued={item.QueuedAt:O})");
+                            GsDataManager.RemovePendingScrobble(item);
+                        }
+                        else {
+                            // Item stays in the queue with its incremented FlushAttempts counter.
+                            // Persist the updated attempt count so the drop threshold survives a restart.
+                            GsDataManager.Save();
+                        }
                     }
                 }
             }
-
-            // Re-queue items that failed but haven't exhausted their retry budget
-            if (failed.Count > 0) {
-                _logger.Info($"Re-queuing {failed.Count} pending scrobble(s) for later retry");
-                foreach (var item in failed) {
-                    GsDataManager.EnqueuePendingScrobble(item);
-                }
+            finally {
+                System.Threading.Interlocked.Exchange(ref _flushInFlight, 0);
             }
         }
 
@@ -477,6 +496,9 @@ namespace GsPlugin.Api {
         /// Requests a short-lived (10-minute) dashboard read token from the server.
         /// The plugin embeds this token in the WebView2 URL as ?access_token=...
         /// instead of the raw install UUID, keeping the UUID out of browser history.
+        /// Sends a dashboard context object in the POST body so the server can store
+        /// it alongside the token and return it (tamper-proof) when the frontend resolves
+        /// the token — eliminating the need for client-side URL query params.
         /// Requires a valid InstallToken (x-playnite-token header).
         /// Returns the raw token string on success, or null on failure.
         /// </summary>
@@ -490,8 +512,21 @@ namespace GsPlugin.Api {
             string url = $"{_apiBaseUrl}/api/playnite/v2/dashboard-token";
 
             try {
-                using (var request = new HttpRequestMessage(HttpMethod.Get, url)) {
+                var data = GsDataManager.DataOrNull;
+                var context = new {
+                    plugin_version = GsSentry.GetPluginVersion(),
+                    scrobbling_disabled = data?.Flags?.Contains("no-scrobble") ?? false,
+                    sentry_disabled = data?.Flags?.Contains("no-sentry") ?? false,
+                    posthog_disabled = data?.Flags?.Contains("no-posthog") ?? false,
+                    new_dashboard = data?.NewDashboardExperience ?? false,
+                    sync_achievements = data?.SyncAchievements ?? false,
+                };
+
+                string jsonBody = JsonSerializer.Serialize(new { context }, _jsonOptions);
+
+                using (var request = new HttpRequestMessage(HttpMethod.Post, url)) {
                     request.Headers.Add("x-playnite-token", installToken);
+                    request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
                     HttpResponseMessage response = await _sharedHttpClient.SendAsync(request).ConfigureAwait(false);
                     string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 

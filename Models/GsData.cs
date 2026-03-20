@@ -155,6 +155,13 @@ namespace GsPlugin.Models {
     /// </summary>
     public static class GsDataManager {
         /// <summary>
+        /// Raised when install-token or pending-scrobble state changes.
+        /// Settings UI subscribes to keep diagnostics indicators fresh.
+        /// Fired outside the lock so handlers must not call back into GsDataManager under lock.
+        /// </summary>
+        public static event EventHandler DiagnosticsStateChanged;
+
+        /// <summary>
         /// The current data instance.
         /// </summary>
         private static GsData _data;
@@ -307,6 +314,7 @@ namespace GsPlugin.Models {
                 _data.InstallToken = null; // Token is invalidated server-side on opt-out
                 SaveInternal();
             }
+            DiagnosticsStateChanged?.Invoke(null, EventArgs.Empty);
         }
 
         /// <summary>
@@ -355,14 +363,17 @@ namespace GsPlugin.Models {
         /// window between a lockless IsOptedOut check and a subsequent direct field assignment.
         /// </summary>
         public static bool SetInstallTokenIfActive(string token) {
+            bool stored;
             lock (_lock) {
                 if (_data.OptedOut) {
                     return false;
                 }
                 _data.InstallToken = token;
                 SaveInternal();
-                return true;
+                stored = true;
             }
+            DiagnosticsStateChanged?.Invoke(null, EventArgs.Empty);
+            return stored;
         }
 
         /// <summary>
@@ -398,6 +409,7 @@ namespace GsPlugin.Models {
             }
             // Reset snapshot outside the data lock (each manager has its own lock).
             GsSnapshotManager.Reset();
+            DiagnosticsStateChanged?.Invoke(null, EventArgs.Empty);
             return newId;
         }
 
@@ -425,6 +437,7 @@ namespace GsPlugin.Models {
                 _data.PendingScrobbles.Add(item);
                 SaveInternal();
             }
+            DiagnosticsStateChanged?.Invoke(null, EventArgs.Empty);
         }
 
         /// <summary>
@@ -437,6 +450,29 @@ namespace GsPlugin.Models {
                 SaveInternal();
                 return snapshot;
             }
+        }
+
+        /// <summary>
+        /// Returns a snapshot of the pending scrobble queue without removing items. Thread-safe.
+        /// Use with <see cref="RemovePendingScrobble"/> for crash-safe flush: items remain on disk
+        /// until each one is confirmed sent, so a mid-flush crash loses nothing.
+        /// </summary>
+        public static List<PendingScrobble> PeekPendingScrobbles() {
+            lock (_lock) {
+                return new List<PendingScrobble>(_data.PendingScrobbles);
+            }
+        }
+
+        /// <summary>
+        /// Removes a single pending scrobble from the queue and persists immediately. Thread-safe.
+        /// Used by the flush path to commit each item individually after a confirmed send.
+        /// </summary>
+        public static void RemovePendingScrobble(PendingScrobble item) {
+            lock (_lock) {
+                _data.PendingScrobbles.Remove(item);
+                SaveInternal();
+            }
+            DiagnosticsStateChanged?.Invoke(null, EventArgs.Empty);
         }
     }
 }
