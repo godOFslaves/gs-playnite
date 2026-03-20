@@ -263,10 +263,12 @@ namespace GsPlugin.Models {
             Settings = savedSettings;
 
             // Sync settings to GsDataManager
-            GsDataManager.Data.NewDashboardExperience = savedSettings.NewDashboardExperience;
-            GsDataManager.Data.SyncAchievements = savedSettings.SyncAchievements;
-            GsDataManager.Data.ShowUpdateNotifications = savedSettings.ShowUpdateNotifications;
-            GsDataManager.Data.ShowImportantNotifications = savedSettings.ShowImportantNotifications;
+            GsDataManager.MutateAndSave(d => {
+                d.NewDashboardExperience = savedSettings.NewDashboardExperience;
+                d.SyncAchievements = savedSettings.SyncAchievements;
+                d.ShowUpdateNotifications = savedSettings.ShowUpdateNotifications;
+                d.ShowImportantNotifications = savedSettings.ShowImportantNotifications;
+            });
 
             // Log successful load for debugging
             GsSentry.AddBreadcrumb(
@@ -325,13 +327,15 @@ namespace GsPlugin.Models {
             _plugin.SavePluginSettings(Settings);
 
             // Update global data manager
-            GsDataManager.Data.Theme = Settings.Theme;
-            GsDataManager.Data.UpdateFlags(Settings.DisableSentry, Settings.DisableScrobbling, Settings.DisablePostHog);
-            GsDataManager.Data.NewDashboardExperience = Settings.NewDashboardExperience;
-            GsDataManager.Data.SyncAchievements = Settings.SyncAchievements;
-            GsDataManager.Data.ShowUpdateNotifications = Settings.ShowUpdateNotifications;
-            GsDataManager.Data.ShowImportantNotifications = Settings.ShowImportantNotifications;
-            GsDataManager.Save();
+            var s = Settings;
+            GsDataManager.MutateAndSave(d => {
+                d.Theme = s.Theme;
+                d.UpdateFlags(s.DisableSentry, s.DisableScrobbling, s.DisablePostHog);
+                d.NewDashboardExperience = s.NewDashboardExperience;
+                d.SyncAchievements = s.SyncAchievements;
+                d.ShowUpdateNotifications = s.ShowUpdateNotifications;
+                d.ShowImportantNotifications = s.ShowImportantNotifications;
+            });
 
             GsLogger.ShowDebugInfoBox($"Settings saved:\nTheme: {Settings.Theme}\nNew Dashboard: {Settings.NewDashboardExperience}\nFlags: {string.Join(", ", GsDataManager.Data.Flags)}", "Debug - Settings Saved");
         }
@@ -421,7 +425,7 @@ namespace GsPlugin.Models {
                 Settings.IsDeleting = true;
                 Settings.DeleteStatusMessage = "Requesting data deletion...";
 
-                var result = await _apiClient.RequestDeleteMyData(new GsApiClient.DeleteDataReq());
+                var result = await _apiClient.RequestDeleteMyData(new DeleteDataReq());
 
                 if (result != null && result.success) {
                     // Capture analytics before opt-out disables telemetry

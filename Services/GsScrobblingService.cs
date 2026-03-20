@@ -88,8 +88,7 @@ namespace GsPlugin.Services {
         private static void ClearActiveSession() {
             if (!string.IsNullOrEmpty(GsDataManager.Data.ActiveSessionId)) {
                 _logger.Info("Manually clearing active session ID");
-                GsDataManager.Data.ActiveSessionId = null;
-                GsDataManager.Save();
+                GsDataManager.MutateAndSave(d => d.ActiveSessionId = null);
             }
         }
 
@@ -104,8 +103,7 @@ namespace GsPlugin.Services {
             }
 
             _logger.Info($"Setting active session ID: {sessionId}");
-            GsDataManager.Data.ActiveSessionId = sessionId;
-            GsDataManager.Save();
+            GsDataManager.MutateAndSave(d => d.ActiveSessionId = sessionId);
         }
 
         /// <summary>
@@ -117,13 +115,9 @@ namespace GsPlugin.Services {
             var oldId = GsDataManager.Data.LinkedUserId;
 
             // Only set LinkedUserId if it's a valid ID (not the sentinel value)
-            if (userId == GsData.NotLinkedValue || string.IsNullOrEmpty(userId)) {
-                GsDataManager.Data.LinkedUserId = null;
-            }
-            else {
-                GsDataManager.Data.LinkedUserId = userId;
-            }
-            GsDataManager.Save();
+            var newValue = (userId == GsData.NotLinkedValue || string.IsNullOrEmpty(userId))
+                ? null : userId;
+            GsDataManager.MutateAndSave(d => d.LinkedUserId = newValue);
 
             // Log state changes
             bool newLinked = GsDataManager.IsAccountLinked;
@@ -169,7 +163,7 @@ namespace GsPlugin.Services {
                 // Re-check opt-out before sending data (user may have opted out mid-flight)
                 if (GsDataManager.IsOptedOut) return;
 
-                var sessionData = await _apiClient.StartGameSession(new GsApiClient.ScrobbleStartReq {
+                var sessionData = await _apiClient.StartGameSession(new ScrobbleStartReq {
                     user_id = GsDataManager.InstallIdForBody,
                     game_name = startedGame.Name,
                     game_id = startedGame.Id.ToString(),
@@ -183,8 +177,7 @@ namespace GsPlugin.Services {
                     // Clear any stale pending-start marker so the stop handler uses the
                     // normal active-session path instead of the queued-pair branch.
                     if (GsDataManager.Data.PendingStartGameId != null) {
-                        GsDataManager.Data.PendingStartGameId = null;
-                        GsDataManager.Save();
+                        GsDataManager.MutateAndSave(d => d.PendingStartGameId = null);
                     }
                     _logger.Info($"Successfully started scrobble session with ID: {sessionData.session_id}");
                 }
@@ -192,7 +185,7 @@ namespace GsPlugin.Services {
                     _logger.Error($"Failed to start scrobble session for game: {startedGame.Name} (ID: {startedGame.Id}). Queuing start for retry.");
                     GsDataManager.EnqueuePendingScrobble(new PendingScrobble {
                         Type = "start",
-                        StartData = new GsApiClient.ScrobbleStartReq {
+                        StartData = new ScrobbleStartReq {
                             user_id = GsDataManager.InstallIdForBody,
                             game_name = startedGame.Name,
                             game_id = startedGame.Id.ToString(),
@@ -205,8 +198,7 @@ namespace GsPlugin.Services {
                     });
                     // Mark that this game has a queued start so OnGameStoppedAsync can pair it
                     // with a finish even though there is no ActiveSessionId.
-                    GsDataManager.Data.PendingStartGameId = startedGame.Id.ToString();
-                    GsDataManager.Save();
+                    GsDataManager.MutateAndSave(d => d.PendingStartGameId = startedGame.Id.ToString());
                 }
             }
             catch (Exception ex) {
@@ -241,7 +233,7 @@ namespace GsPlugin.Services {
                     _logger.Info($"Queuing finish to pair with pending start for game: {stoppedGame.Name} (ID: {stoppedGame.Id})");
                     GsDataManager.EnqueuePendingScrobble(new PendingScrobble {
                         Type = "finish",
-                        FinishData = new GsApiClient.ScrobbleFinishReq {
+                        FinishData = new ScrobbleFinishReq {
                             user_id = GsDataManager.InstallIdForBody,
                             game_name = stoppedGame.Name,
                             game_id = stoppedGame.Id.ToString(),
@@ -253,8 +245,7 @@ namespace GsPlugin.Services {
                         },
                         QueuedAt = localDate
                     });
-                    GsDataManager.Data.PendingStartGameId = null;
-                    GsDataManager.Save();
+                    GsDataManager.MutateAndSave(d => d.PendingStartGameId = null);
                     return;
                 }
 
@@ -276,7 +267,7 @@ namespace GsPlugin.Services {
                 // Re-check opt-out before sending data (user may have opted out mid-flight)
                 if (GsDataManager.IsOptedOut) return;
 
-                var finishResponse = await _apiClient.FinishGameSession(new GsApiClient.ScrobbleFinishReq {
+                var finishResponse = await _apiClient.FinishGameSession(new ScrobbleFinishReq {
                     user_id = GsDataManager.InstallIdForBody,
                     game_name = stoppedGame.Name,
                     game_id = stoppedGame.Id.ToString(),
@@ -295,7 +286,7 @@ namespace GsPlugin.Services {
                     _logger.Error($"Failed to finish game session for {stoppedGame.Name} (ID: {stoppedGame.Id}). Queuing for retry.");
                     GsDataManager.EnqueuePendingScrobble(new PendingScrobble {
                         Type = "finish",
-                        FinishData = new GsApiClient.ScrobbleFinishReq {
+                        FinishData = new ScrobbleFinishReq {
                             user_id = GsDataManager.InstallIdForBody,
                             game_name = stoppedGame.Name,
                             game_id = stoppedGame.Id.ToString(),
@@ -338,7 +329,7 @@ namespace GsPlugin.Services {
                 if (GsDataManager.IsOptedOut) return;
 
                 DateTime localDate = DateTime.Now;
-                var finishResponse = await _apiClient.FinishGameSession(new GsApiClient.ScrobbleFinishReq {
+                var finishResponse = await _apiClient.FinishGameSession(new ScrobbleFinishReq {
                     user_id = GsDataManager.InstallIdForBody,
                     session_id = GsDataManager.Data.ActiveSessionId,
                     metadata = new { reason = "application_stopped" },
@@ -352,7 +343,7 @@ namespace GsPlugin.Services {
                     _logger.Error("Failed to finish active session on application stop. Queuing for retry.");
                     GsDataManager.EnqueuePendingScrobble(new PendingScrobble {
                         Type = "finish",
-                        FinishData = new GsApiClient.ScrobbleFinishReq {
+                        FinishData = new ScrobbleFinishReq {
                             user_id = GsDataManager.InstallIdForBody,
                             session_id = GsDataManager.Data.ActiveSessionId,
                             metadata = new { reason = "application_stopped" },
@@ -387,9 +378,11 @@ namespace GsPlugin.Services {
                             _allowedPluginIds = newIds;
                         }
 
-                        GsDataManager.Data.AllowedPlugins = newIds.Select(g => g.ToString()).ToList();
-                        GsDataManager.Data.AllowedPluginsLastFetched = DateTime.UtcNow;
-                        GsDataManager.Save();
+                        var pluginStrings = newIds.Select(g => g.ToString()).ToList();
+                        GsDataManager.MutateAndSave(d => {
+                            d.AllowedPlugins = pluginStrings;
+                            d.AllowedPluginsLastFetched = DateTime.UtcNow;
+                        });
 
                         _logger.Info($"Refreshed allowed plugins from server ({response.source}): {newIds.Count} active plugins");
                     }
@@ -442,7 +435,7 @@ namespace GsPlugin.Services {
         private static string FormatDateForHash(DateTime? dt) =>
             dt?.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") ?? "";
 
-        public static string ComputeLibraryHash(List<GsApiClient.GameSyncDto> library) {
+        public static string ComputeLibraryHash(List<GameSyncDto> library) {
             var keys = library
                 .Select(g =>
                     $"{g.playnite_id ?? ""}:{g.playtime_seconds}:{g.play_count}:{FormatDateForHash(g.last_activity)}:{ComputeGameMetadataHash(g)}")
@@ -461,111 +454,17 @@ namespace GsPlugin.Services {
             }
         }
 
-        /// <summary>
-        /// Synchronizes the Playnite library with the external API.
-        /// Returns <see cref="SyncLibraryResult.Cooldown"/> when the server enforces the 24-hour sync limit.
-        /// Returns <see cref="SyncLibraryResult.Skipped"/> when the library hash matches the last sent hash.
-        /// </summary>
-        /// <param name="playniteDatabaseGames">List of games from Playnite's database</param>
-        public async Task<SyncLibraryResult> SyncLibraryAsync(IEnumerable<Playnite.SDK.Models.Game> playniteDatabaseGames) {
-            try {
-                if (GsDataManager.IsOptedOut) return SyncLibraryResult.Skipped;
-
-                // Client-side cooldown guard: skip the API call if the server told us to wait
-                var cooldownExpiry = GsDataManager.Data.SyncCooldownExpiresAt;
-                if (cooldownExpiry.HasValue && DateTime.UtcNow < cooldownExpiry.Value) {
-                    _logger.Info($"Library sync skipped: client-side cooldown active until {cooldownExpiry.Value:O}");
-                    return SyncLibraryResult.Cooldown;
-                }
-
-                _logger.Info("Starting library sync with GameScrobbler API");
-                var allGames = playniteDatabaseGames.ToList();
-                var syncAchievements = GsDataManager.Data.SyncAchievements;
-
-                // Build the DTO list and compute the library hash on a background thread.
-                // This avoids blocking the main/UI thread for large libraries (10,000+ games),
-                // since the LINQ mapping and achievement lookups are CPU-bound.
-                var (library, libraryHash, filteredGames) = await Task.Run(() => {
-                    var filtered = allGames
-                        .Where(g => g.PluginId != Guid.Empty && AllowedPluginIds.Contains(g.PluginId))
-                        .ToList();
-
-                    var dtos = filtered.Select(g => MapGameToDto(g, syncAchievements)).ToList();
-
-                    return (dtos, ComputeLibraryHash(dtos), filtered);
-                });
-
-                var filteredCount = allGames.Count - filteredGames.Count;
-                if (filteredCount > 0) {
-                    _logger.Info($"Filtered {filteredCount} games from unsupported plugins (sending {filteredGames.Count}/{allGames.Count})");
-                }
-
-                var integrationAccounts = ReadIntegrationAccountsSafe();
-                var accountsHash = ComputeIntegrationAccountsHash(integrationAccounts);
-                var accountsChanged = accountsHash != (GsDataManager.Data.LastIntegrationAccountsHash ?? "");
-
-                // Client-side hash guard: skip the API call if the library hasn't changed since the last sync.
-                if (libraryHash == GsDataManager.Data.LastLibraryHash && !accountsChanged) {
-                    _logger.Info("Library hash unchanged since last sync — skipping.");
-                    return SyncLibraryResult.Skipped;
-                }
-
-                // Re-check opt-out before sending data (user may have opted out mid-flight)
-                if (GsDataManager.IsOptedOut) return SyncLibraryResult.Skipped;
-
-                var syncResponse = await _apiClient.SyncLibraryFull(new GsApiClient.LibraryFullSyncReq {
-                    user_id = GsDataManager.InstallIdForBody,
-                    library = library,
-                    flags = GsDataManager.Data.Flags.ToArray(),
-                    integration_accounts = integrationAccounts.Count > 0 ? integrationAccounts : null
-                });
-
-                if (syncResponse == null) {
-                    _logger.Error("Failed to synchronize library with the external API.");
-                    return SyncLibraryResult.Error;
-                }
-
-                if (syncResponse.status == "skipped"
-                    && syncResponse.reason != null && syncResponse.reason.StartsWith("cooldown_")) {
-                    // Server enforced cooldown — persist the expiry so we don't hammer the API
-                    HandleCooldownResponse(syncResponse);
-                    _logger.Info($"Library sync skipped by server cooldown.");
-                    return SyncLibraryResult.Cooldown;
-                }
-
-                if (syncResponse.success && syncResponse.status == "queued") {
-                    _logger.Info("Library sync request queued successfully.");
-                    GsDataManager.Data.LastSyncAt = DateTime.UtcNow;
-                    GsDataManager.Data.LastSyncGameCount = filteredGames.Count;
-                    // Store hashes so the next sync can skip if nothing has changed
-                    GsDataManager.Data.LastLibraryHash = libraryHash;
-                    GsDataManager.Data.LastIntegrationAccountsHash = accountsHash;
-                    // Sync succeeded — clear any stale cooldown
-                    GsDataManager.Data.SyncCooldownExpiresAt = null;
-                    GsDataManager.Save();
-                    return SyncLibraryResult.Success;
-                }
-
-                _logger.Error($"Unexpected response from library sync: status={syncResponse.status}");
-                return SyncLibraryResult.Error;
-            }
-            catch (Exception ex) {
-                _logger.Error(ex, "Error synchronizing library with GameScrobbler API");
-                return SyncLibraryResult.Error;
-            }
-        }
-
         #region v2 Sync Methods
 
         /// <summary>
         /// Maps a Playnite Game to the API DTO. Shared by all sync paths.
         /// </summary>
-        private GsApiClient.GameSyncDto MapGameToDto(Playnite.SDK.Models.Game g, bool syncAchievements) {
+        private GameSyncDto MapGameToDto(Playnite.SDK.Models.Game g, bool syncAchievements) {
             var achievementCounts = syncAchievements
                 ? _achievementHelper.GetCounts(g.Id)
                 : null;
 
-            return new GsApiClient.GameSyncDto {
+            return new GameSyncDto {
                 game_id = g.GameId,
                 plugin_id = g.PluginId.ToString(),
                 game_name = g.Name,
@@ -628,7 +527,7 @@ namespace GsPlugin.Services {
         /// Includes all DTO fields except activity fields (playtime, play_count, last_activity)
         /// which are already covered by the library-level hash key.
         /// </summary>
-        public static string ComputeGameMetadataHash(GsApiClient.GameSyncDto g) {
+        public static string ComputeGameMetadataHash(GameSyncDto g) {
             var sb = new StringBuilder();
             sb.Append(g.game_name ?? "");
             sb.Append('|');
@@ -695,10 +594,10 @@ namespace GsPlugin.Services {
         /// Keys are sorted ordinally, then hashed with "|" separator.
         /// Must match server's createAchievementHashV2() exactly.
         /// </summary>
-        public static string ComputeAchievementHash(List<GsApiClient.GameAchievementsDto> games) {
+        public static string ComputeAchievementHash(List<GameAchievementsDto> games) {
             var keys = games
                 .Select(g => {
-                    var achs = g.achievements ?? new List<GsApiClient.AchievementItemDto>();
+                    var achs = g.achievements ?? new List<AchievementItemDto>();
                     var unlockedCount = achs.Count(a => a.is_unlocked);
                     var sortedNames = string.Join(",", achs.Select(a => a.name).OrderBy(n => n, StringComparer.Ordinal));
                     string namesHash;
@@ -727,7 +626,7 @@ namespace GsPlugin.Services {
         /// <summary>
         /// Creates a GameSnapshot from a DTO for the local snapshot store.
         /// </summary>
-        private static GameSnapshot BuildGameSnapshot(GsApiClient.GameSyncDto g) {
+        private static GameSnapshot BuildGameSnapshot(GameSyncDto g) {
             return new GameSnapshot {
                 playnite_id = g.playnite_id,
                 game_id = g.game_id,
@@ -744,10 +643,10 @@ namespace GsPlugin.Services {
         /// <summary>
         /// Computes the diff between the current library DTOs and the stored snapshot.
         /// </summary>
-        private static (List<GsApiClient.GameSyncDto> added, List<GsApiClient.GameSyncDto> updated, List<string> removed)
-            ComputeLibraryDiff(List<GsApiClient.GameSyncDto> current, Dictionary<string, GameSnapshot> snapshot) {
-            var added = new List<GsApiClient.GameSyncDto>();
-            var updated = new List<GsApiClient.GameSyncDto>();
+        private static (List<GameSyncDto> added, List<GameSyncDto> updated, List<string> removed)
+            ComputeLibraryDiff(List<GameSyncDto> current, Dictionary<string, GameSnapshot> snapshot) {
+            var added = new List<GameSyncDto>();
+            var updated = new List<GameSyncDto>();
 
             var currentIds = new HashSet<string>();
             foreach (var g in current) {
@@ -784,7 +683,7 @@ namespace GsPlugin.Services {
         /// Builds the filtered DTO list from Playnite games on a background thread.
         /// Shared by full and diff sync paths.
         /// </summary>
-        private async Task<(List<GsApiClient.GameSyncDto> library, string libraryHash, int totalCount, int filteredCount)>
+        private async Task<(List<GameSyncDto> library, string libraryHash, int totalCount, int filteredCount)>
             BuildLibraryDtosAsync(IEnumerable<Playnite.SDK.Models.Game> playniteDatabaseGames) {
             var allGames = playniteDatabaseGames.ToList();
             var syncAchievements = GsDataManager.Data.SyncAchievements;
@@ -882,7 +781,7 @@ namespace GsPlugin.Services {
                 // Re-check opt-out before sending data (user may have opted out mid-flight)
                 if (GsDataManager.IsOptedOut) return SyncLibraryResult.Skipped;
 
-                var response = await _apiClient.SyncLibraryFull(new GsApiClient.LibraryFullSyncReq {
+                var response = await _apiClient.SyncLibraryFull(new LibraryFullSyncReq {
                     user_id = GsDataManager.InstallIdForBody,
                     library = library,
                     flags = GsDataManager.Data.Flags.ToArray(),
@@ -901,12 +800,14 @@ namespace GsPlugin.Services {
 
                 if (response.success && response.status == "queued") {
                     _logger.Info($"Full library sync queued ({library.Count} games).");
-                    GsDataManager.Data.LastSyncAt = DateTime.UtcNow;
-                    GsDataManager.Data.LastSyncGameCount = library.Count;
-                    GsDataManager.Data.LastLibraryHash = libraryHash;
-                    GsDataManager.Data.LastIntegrationAccountsHash = accountsHash;
-                    GsDataManager.Data.SyncCooldownExpiresAt = null;
-                    GsDataManager.Save();
+                    var libCount = library.Count;
+                    GsDataManager.MutateAndSave(d => {
+                        d.LastSyncAt = DateTime.UtcNow;
+                        d.LastSyncGameCount = libCount;
+                        d.LastLibraryHash = libraryHash;
+                        d.LastIntegrationAccountsHash = accountsHash;
+                        d.SyncCooldownExpiresAt = null;
+                    });
 
                     // Write full snapshot
                     var snapshotDict = library.ToDictionary(
@@ -961,8 +862,7 @@ namespace GsPlugin.Services {
                 // with empty diff so the backend can process the new accounts.
                 if (added.Count == 0 && updated.Count == 0 && removed.Count == 0 && !accountsChanged) {
                     _logger.Info("Library diff is empty — skipping.");
-                    GsDataManager.Data.LastLibraryHash = libraryHash;
-                    GsDataManager.Save();
+                    GsDataManager.MutateAndSave(d => d.LastLibraryHash = libraryHash);
                     return SyncLibraryResult.Skipped;
                 }
 
@@ -972,7 +872,7 @@ namespace GsPlugin.Services {
                 // Re-check opt-out before sending data (user may have opted out mid-flight)
                 if (GsDataManager.IsOptedOut) return SyncLibraryResult.Skipped;
 
-                var response = await _apiClient.SyncLibraryDiff(new GsApiClient.LibraryDiffSyncReq {
+                var response = await _apiClient.SyncLibraryDiff(new LibraryDiffSyncReq {
                     user_id = GsDataManager.InstallIdForBody,
                     added = added,
                     updated = updated,
@@ -991,10 +891,10 @@ namespace GsPlugin.Services {
                 if (response.status == "force-full-sync") {
                     _logger.Info($"Server requested full sync (reason: {response.reason}). Falling back.");
                     GsSnapshotManager.ClearLibrarySnapshot();
-                    GsDataManager.Data.LastLibraryHash = null;
-                    // Clear cooldown so the full-sync fallback isn't blocked
-                    GsDataManager.Data.SyncCooldownExpiresAt = null;
-                    GsDataManager.Save();
+                    GsDataManager.MutateAndSave(d => {
+                        d.LastLibraryHash = null;
+                        d.SyncCooldownExpiresAt = null;
+                    });
                     return await SyncLibraryFullAsync(playniteDatabaseGames, bypassCooldown: true);
                 }
 
@@ -1005,12 +905,14 @@ namespace GsPlugin.Services {
 
                 if (response.success && response.status == "queued") {
                     _logger.Info("Library diff sync queued successfully.");
-                    GsDataManager.Data.LastSyncAt = DateTime.UtcNow;
-                    GsDataManager.Data.LastSyncGameCount = library.Count;
-                    GsDataManager.Data.LastLibraryHash = libraryHash;
-                    GsDataManager.Data.LastIntegrationAccountsHash = accountsHash;
-                    GsDataManager.Data.LibraryDiffSyncCooldownExpiresAt = null;
-                    GsDataManager.Save();
+                    var libCount = library.Count;
+                    GsDataManager.MutateAndSave(d => {
+                        d.LastSyncAt = DateTime.UtcNow;
+                        d.LastSyncGameCount = libCount;
+                        d.LastLibraryHash = libraryHash;
+                        d.LastIntegrationAccountsHash = accountsHash;
+                        d.LibraryDiffSyncCooldownExpiresAt = null;
+                    });
 
                     // Update snapshot with diff
                     var addedSnapshots = added.ToDictionary(g => g.playnite_id, g => BuildGameSnapshot(g));
@@ -1057,9 +959,9 @@ namespace GsPlugin.Services {
 
                             // Deduplicate by achievement name — last entry wins.
                             // Achievement providers may return duplicates; matches diff sync behavior.
-                            var dedupedByName = new Dictionary<string, GsApiClient.AchievementItemDto>();
+                            var dedupedByName = new Dictionary<string, AchievementItemDto>();
                             foreach (var a in achievements) {
-                                dedupedByName[a.Name ?? ""] = new GsApiClient.AchievementItemDto {
+                                dedupedByName[a.Name ?? ""] = new AchievementItemDto {
                                     name = a.Name,
                                     description = a.Description,
                                     date_unlocked = a.DateUnlocked,
@@ -1068,7 +970,7 @@ namespace GsPlugin.Services {
                                 };
                             }
 
-                            return new GsApiClient.GameAchievementsDto {
+                            return new GameAchievementsDto {
                                 playnite_id = g.Id.ToString(),
                                 game_id = g.GameId,
                                 plugin_id = g.PluginId.ToString(),
@@ -1090,7 +992,7 @@ namespace GsPlugin.Services {
                 // Re-check opt-out before sending data (user may have opted out mid-flight)
                 if (GsDataManager.IsOptedOut) return SyncLibraryResult.Skipped;
 
-                var response = await _apiClient.SyncAchievementsFull(new GsApiClient.AchievementsFullSyncReq {
+                var response = await _apiClient.SyncAchievementsFull(new AchievementsFullSyncReq {
                     user_id = GsDataManager.InstallIdForBody,
                     games = games
                 });
@@ -1118,8 +1020,8 @@ namespace GsPlugin.Services {
                     GsSnapshotManager.UpdateAchievementsSnapshot(snapshotDict);
 
                     // Store achievement hash for diff sync change detection
-                    GsDataManager.Data.LastAchievementHash = ComputeAchievementHash(games);
-                    GsDataManager.Save();
+                    var achHash = ComputeAchievementHash(games);
+                    GsDataManager.MutateAndSave(d => d.LastAchievementHash = achHash);
 
                     return SyncLibraryResult.Success;
                 }
@@ -1152,7 +1054,7 @@ namespace GsPlugin.Services {
                 var achievementSnapshot = GsSnapshotManager.GetAchievementsSnapshot();
 
                 var (changed, clearedIds) = await Task.Run(() => {
-                    var result = new List<GsApiClient.GameAchievementsDto>();
+                    var result = new List<GameAchievementsDto>();
                     var currentGameIds = new HashSet<string>();
 
                     foreach (var g in allGames) {
@@ -1166,11 +1068,11 @@ namespace GsPlugin.Services {
                         if ((achievements == null || achievements.Count == 0)
                             && achievementSnapshot.ContainsKey(playniteId)) {
                             currentGameIds.Add(playniteId);
-                            result.Add(new GsApiClient.GameAchievementsDto {
+                            result.Add(new GameAchievementsDto {
                                 playnite_id = playniteId,
                                 game_id = g.GameId,
                                 plugin_id = g.PluginId.ToString(),
-                                achievements = new List<GsApiClient.AchievementItemDto>()
+                                achievements = new List<AchievementItemDto>()
                             });
                             continue;
                         }
@@ -1213,9 +1115,9 @@ namespace GsPlugin.Services {
                         if (hasChanged) {
                             // Deduplicate by achievement name — last entry wins.
                             // Matches full sync deduplication to avoid data inconsistency.
-                            var dedupedByName = new Dictionary<string, GsApiClient.AchievementItemDto>();
+                            var dedupedByName = new Dictionary<string, AchievementItemDto>();
                             foreach (var a in achievements) {
-                                dedupedByName[a.Name ?? ""] = new GsApiClient.AchievementItemDto {
+                                dedupedByName[a.Name ?? ""] = new AchievementItemDto {
                                     name = a.Name,
                                     description = a.Description,
                                     date_unlocked = a.DateUnlocked,
@@ -1224,7 +1126,7 @@ namespace GsPlugin.Services {
                                 };
                             }
 
-                            result.Add(new GsApiClient.GameAchievementsDto {
+                            result.Add(new GameAchievementsDto {
                                 playnite_id = playniteId,
                                 game_id = g.GameId,
                                 plugin_id = g.PluginId.ToString(),
@@ -1248,9 +1150,9 @@ namespace GsPlugin.Services {
 
                 // Include removed-library games as empty-achievement entries so the server deletes them
                 foreach (var clearedId in clearedIds) {
-                    changed.Add(new GsApiClient.GameAchievementsDto {
+                    changed.Add(new GameAchievementsDto {
                         playnite_id = clearedId,
-                        achievements = new List<GsApiClient.AchievementItemDto>()
+                        achievements = new List<AchievementItemDto>()
                     });
                 }
 
@@ -1259,7 +1161,7 @@ namespace GsPlugin.Services {
                 // Re-check opt-out before sending data (user may have opted out mid-flight)
                 if (GsDataManager.IsOptedOut) return SyncLibraryResult.Skipped;
 
-                var response = await _apiClient.SyncAchievementsDiff(new GsApiClient.AchievementsDiffSyncReq {
+                var response = await _apiClient.SyncAchievementsDiff(new AchievementsDiffSyncReq {
                     user_id = GsDataManager.InstallIdForBody,
                     changed = changed,
                     base_snapshot_hash = GsDataManager.Data.LastAchievementHash ?? ""
@@ -1273,8 +1175,7 @@ namespace GsPlugin.Services {
                 if (response.status == "force-full-sync") {
                     _logger.Info($"Server requested full achievement sync (reason: {response.reason}). Falling back.");
                     GsSnapshotManager.ClearAchievementsSnapshot();
-                    GsDataManager.Data.LastAchievementHash = null;
-                    GsDataManager.Save();
+                    GsDataManager.MutateAndSave(d => d.LastAchievementHash = null);
                     return await SyncAchievementsFullAsync(playniteDatabaseGames, bypassCooldown: true);
                 }
 
@@ -1305,17 +1206,17 @@ namespace GsPlugin.Services {
 
                     // Recompute achievement hash from the full updated snapshot
                     var updatedSnapshot = GsSnapshotManager.GetAchievementsSnapshot();
-                    var snapshotAsDtos = updatedSnapshot.Values.Select(snap => new GsApiClient.GameAchievementsDto {
+                    var snapshotAsDtos = updatedSnapshot.Values.Select(snap => new GameAchievementsDto {
                         playnite_id = snap.playnite_id,
-                        achievements = snap.achievements?.Select(a => new GsApiClient.AchievementItemDto {
+                        achievements = snap.achievements?.Select(a => new AchievementItemDto {
                             name = a.name,
                             is_unlocked = a.is_unlocked,
                             date_unlocked = a.date_unlocked != null && DateTime.TryParse(a.date_unlocked, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? dt : (DateTime?)null,
                             rarity_percent = a.rarity_percent
-                        }).ToList() ?? new List<GsApiClient.AchievementItemDto>()
+                        }).ToList() ?? new List<AchievementItemDto>()
                     }).ToList();
-                    GsDataManager.Data.LastAchievementHash = ComputeAchievementHash(snapshotAsDtos);
-                    GsDataManager.Save();
+                    var diffAchHash = ComputeAchievementHash(snapshotAsDtos);
+                    GsDataManager.MutateAndSave(d => d.LastAchievementHash = diffAchHash);
 
                     return SyncLibraryResult.Success;
                 }
@@ -1332,7 +1233,7 @@ namespace GsPlugin.Services {
         /// <summary>
         /// Parses cooldown info from an AsyncQueuedResponse and persists it to the appropriate field.
         /// </summary>
-        private static void HandleCooldownResponse(GsApiClient.AsyncQueuedResponse response, bool isDiffSync = false) {
+        private static void HandleCooldownResponse(AsyncQueuedResponse response, bool isDiffSync = false) {
             DateTime? expiresAt = null;
             if (!string.IsNullOrEmpty(response.cooldownExpiresAt)
                 && DateTime.TryParse(response.cooldownExpiresAt, null,
@@ -1341,13 +1242,12 @@ namespace GsPlugin.Services {
             }
             _logger.Info($"Sync skipped by server cooldown. Expires: {expiresAt?.ToString("O") ?? "unknown"}");
             if (expiresAt.HasValue) {
-                if (isDiffSync) {
-                    GsDataManager.Data.LibraryDiffSyncCooldownExpiresAt = expiresAt.Value;
-                }
-                else {
-                    GsDataManager.Data.SyncCooldownExpiresAt = expiresAt.Value;
-                }
-                GsDataManager.Save();
+                GsDataManager.MutateAndSave(d => {
+                    if (isDiffSync)
+                        d.LibraryDiffSyncCooldownExpiresAt = expiresAt.Value;
+                    else
+                        d.SyncCooldownExpiresAt = expiresAt.Value;
+                });
             }
         }
 

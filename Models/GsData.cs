@@ -13,8 +13,8 @@ namespace GsPlugin.Models {
     /// </summary>
     public class PendingScrobble {
         public string Type { get; set; }
-        public GsApiClient.ScrobbleStartReq StartData { get; set; }
-        public GsApiClient.ScrobbleFinishReq FinishData { get; set; }
+        public ScrobbleStartReq StartData { get; set; }
+        public ScrobbleFinishReq FinishData { get; set; }
         public DateTime QueuedAt { get; set; }
         /// <summary>
         /// Number of times this item has been through FlushPendingScrobblesAsync without success.
@@ -250,6 +250,19 @@ namespace GsPlugin.Models {
         }
 
         /// <summary>
+        /// Atomically mutates the data and persists it under a single lock acquisition.
+        /// Use this instead of directly modifying <see cref="Data"/> properties followed by <see cref="Save()"/>
+        /// to prevent concurrent threads from interleaving mutations.
+        /// </summary>
+        /// <param name="action">Action that modifies the <see cref="GsData"/> instance.</param>
+        public static void MutateAndSave(Action<GsData> action) {
+            lock (_lock) {
+                action(_data);
+                SaveInternal();
+            }
+        }
+
+        /// <summary>
         /// Internal save implementation. Must be called under _lock.
         /// </summary>
         private static void SaveInternal() {
@@ -438,18 +451,6 @@ namespace GsPlugin.Models {
                 SaveInternal();
             }
             DiagnosticsStateChanged?.Invoke(null, EventArgs.Empty);
-        }
-
-        /// <summary>
-        /// Atomically removes and returns all pending scrobbles from the queue. Thread-safe.
-        /// </summary>
-        public static List<PendingScrobble> DequeuePendingScrobbles() {
-            lock (_lock) {
-                var snapshot = new List<PendingScrobble>(_data.PendingScrobbles);
-                _data.PendingScrobbles.Clear();
-                SaveInternal();
-                return snapshot;
-            }
         }
 
         /// <summary>
