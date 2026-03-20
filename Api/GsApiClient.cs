@@ -18,13 +18,8 @@ namespace GsPlugin.Api {
     public class GsApiClient : IGsApiClient {
         private static readonly ILogger _logger = LogManager.GetLogger();
 
-#if DEBUG
-        private static readonly string _apiBaseUrl = "https://api.stage.gamescrobbler.com";
-        private static readonly string _nextApiBaseUrl = "https://stage.gamescrobbler.com";
-#else
         private static readonly string _apiBaseUrl = "https://api.gamescrobbler.com";
         private static readonly string _nextApiBaseUrl = "https://gamescrobbler.com";
-#endif
 
         // Reuse a single HttpClient instance across all API client instances
         // This prevents socket exhaustion and improves performance
