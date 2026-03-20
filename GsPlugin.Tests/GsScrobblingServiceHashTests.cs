@@ -8,22 +8,22 @@ namespace GsPlugin.Tests {
     public class GsScrobblingServiceHashTests {
         [Fact]
         public void ComputeLibraryHash_EmptyLibrary_ReturnsConsistentHash() {
-            var hash1 = GsScrobblingService.ComputeLibraryHash(new List<GsApiClient.GameSyncDto>());
-            var hash2 = GsScrobblingService.ComputeLibraryHash(new List<GsApiClient.GameSyncDto>());
+            var hash1 = GsScrobblingService.ComputeLibraryHash(new List<GameSyncDto>());
+            var hash2 = GsScrobblingService.ComputeLibraryHash(new List<GameSyncDto>());
             Assert.Equal(hash1, hash2);
             Assert.Equal(64, hash1.Length); // SHA-256 hex = 64 chars
         }
 
         [Fact]
         public void ComputeLibraryHash_SameLibrary_ReturnsSameHash() {
-            var library = new List<GsApiClient.GameSyncDto> {
-                new GsApiClient.GameSyncDto {
+            var library = new List<GameSyncDto> {
+                new GameSyncDto {
                     playnite_id = "aaaaaaaa-0000-0000-0000-000000000001",
                     playtime_seconds = 3600,
                     play_count = 5,
                     last_activity = new DateTime(2024, 6, 15, 12, 0, 0, DateTimeKind.Utc)
                 },
-                new GsApiClient.GameSyncDto {
+                new GameSyncDto {
                     playnite_id = "bbbbbbbb-0000-0000-0000-000000000002",
                     playtime_seconds = 0,
                     play_count = 0,
@@ -40,36 +40,36 @@ namespace GsPlugin.Tests {
         public void ComputeLibraryHash_OrderIndependent() {
             // The hash must be the same regardless of the order games appear in the list,
             // because keys are sorted before hashing (matching backend createLibraryHash behaviour).
-            var game1 = new GsApiClient.GameSyncDto {
+            var game1 = new GameSyncDto {
                 playnite_id = "aaaaaaaa-0000-0000-0000-000000000001",
                 playtime_seconds = 1000,
                 play_count = 2,
                 last_activity = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             };
-            var game2 = new GsApiClient.GameSyncDto {
+            var game2 = new GameSyncDto {
                 playnite_id = "cccccccc-0000-0000-0000-000000000003",
                 playtime_seconds = 500,
                 play_count = 1,
                 last_activity = null
             };
 
-            var hashAB = GsScrobblingService.ComputeLibraryHash(new List<GsApiClient.GameSyncDto> { game1, game2 });
-            var hashBA = GsScrobblingService.ComputeLibraryHash(new List<GsApiClient.GameSyncDto> { game2, game1 });
+            var hashAB = GsScrobblingService.ComputeLibraryHash(new List<GameSyncDto> { game1, game2 });
+            var hashBA = GsScrobblingService.ComputeLibraryHash(new List<GameSyncDto> { game2, game1 });
             Assert.Equal(hashAB, hashBA);
         }
 
         [Fact]
         public void ComputeLibraryHash_PlaytimeChange_ProducesDifferentHash() {
-            var before = new List<GsApiClient.GameSyncDto> {
-                new GsApiClient.GameSyncDto {
+            var before = new List<GameSyncDto> {
+                new GameSyncDto {
                     playnite_id = "aaaaaaaa-0000-0000-0000-000000000001",
                     playtime_seconds = 100,
                     play_count = 1,
                     last_activity = null
                 }
             };
-            var after = new List<GsApiClient.GameSyncDto> {
-                new GsApiClient.GameSyncDto {
+            var after = new List<GameSyncDto> {
+                new GameSyncDto {
                     playnite_id = "aaaaaaaa-0000-0000-0000-000000000001",
                     playtime_seconds = 200,
                     play_count = 1,
@@ -84,16 +84,16 @@ namespace GsPlugin.Tests {
 
         [Fact]
         public void ComputeLibraryHash_NewGame_ProducesDifferentHash() {
-            var game = new GsApiClient.GameSyncDto {
+            var game = new GameSyncDto {
                 playnite_id = "aaaaaaaa-0000-0000-0000-000000000001",
                 playtime_seconds = 500,
                 play_count = 3,
                 last_activity = null
             };
-            var one = new List<GsApiClient.GameSyncDto> { game };
-            var two = new List<GsApiClient.GameSyncDto> {
+            var one = new List<GameSyncDto> { game };
+            var two = new List<GameSyncDto> {
                 game,
-                new GsApiClient.GameSyncDto {
+                new GameSyncDto {
                     playnite_id = "bbbbbbbb-0000-0000-0000-000000000002",
                     playtime_seconds = 0,
                     play_count = 0,
@@ -110,8 +110,8 @@ namespace GsPlugin.Tests {
         public void ComputeLibraryHash_MetadataOnlyChange_ProducesDifferentHash() {
             // Validates that metadata-only changes (e.g., game_name rename, genre edit)
             // are detected by ComputeLibraryHash even when activity fields are identical.
-            var before = new List<GsApiClient.GameSyncDto> {
-                new GsApiClient.GameSyncDto {
+            var before = new List<GameSyncDto> {
+                new GameSyncDto {
                     playnite_id = "aaaaaaaa-0000-0000-0000-000000000001",
                     playtime_seconds = 100,
                     play_count = 1,
@@ -119,8 +119,8 @@ namespace GsPlugin.Tests {
                     game_name = "Old Name"
                 }
             };
-            var after = new List<GsApiClient.GameSyncDto> {
-                new GsApiClient.GameSyncDto {
+            var after = new List<GameSyncDto> {
+                new GameSyncDto {
                     playnite_id = "aaaaaaaa-0000-0000-0000-000000000001",
                     playtime_seconds = 100,
                     play_count = 1,
@@ -136,8 +136,8 @@ namespace GsPlugin.Tests {
 
         [Fact]
         public void ComputeLibraryHash_GenreChange_ProducesDifferentHash() {
-            var before = new List<GsApiClient.GameSyncDto> {
-                new GsApiClient.GameSyncDto {
+            var before = new List<GameSyncDto> {
+                new GameSyncDto {
                     playnite_id = "aaaaaaaa-0000-0000-0000-000000000001",
                     playtime_seconds = 100,
                     play_count = 1,
@@ -145,8 +145,8 @@ namespace GsPlugin.Tests {
                     genres = new List<string> { "Action" }
                 }
             };
-            var after = new List<GsApiClient.GameSyncDto> {
-                new GsApiClient.GameSyncDto {
+            var after = new List<GameSyncDto> {
+                new GameSyncDto {
                     playnite_id = "aaaaaaaa-0000-0000-0000-000000000001",
                     playtime_seconds = 100,
                     play_count = 1,
@@ -171,8 +171,8 @@ namespace GsPlugin.Tests {
         /// </summary>
         [Fact]
         public void ComputeLibraryHash_KnownInput_MatchesExpectedHash() {
-            var library = new List<GsApiClient.GameSyncDto> {
-                new GsApiClient.GameSyncDto {
+            var library = new List<GameSyncDto> {
+                new GameSyncDto {
                     playnite_id = "abc",
                     playtime_seconds = 0,
                     play_count = 0,

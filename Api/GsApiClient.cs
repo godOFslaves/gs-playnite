@@ -18,34 +18,47 @@ namespace GsPlugin.Api {
     public class GsApiClient : IGsApiClient {
         private static readonly ILogger _logger = LogManager.GetLogger();
 
+#if DEBUG
+        private static readonly string _apiBaseUrl = "https://api.stage.gamescrobbler.com";
+        private static readonly string _nextApiBaseUrl = "https://stage.gamescrobbler.com";
+#else
         private static readonly string _apiBaseUrl = "https://api.gamescrobbler.com";
         private static readonly string _nextApiBaseUrl = "https://gamescrobbler.com";
+#endif
 
         // Reuse a single HttpClient instance across all API client instances
         // This prevents socket exhaustion and improves performance
-        private static readonly HttpClient _sharedHttpClient;
+        private static readonly HttpClient _defaultHttpClient;
 
         static GsApiClient() {
             // Enforce TLS 1.2+ to avoid negotiating insecure protocol versions on .NET Framework 4.6.2
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
             try {
-                _sharedHttpClient = new HttpClient(new SentryHttpMessageHandler()) {
+                _defaultHttpClient = new HttpClient(new SentryHttpMessageHandler()) {
                     Timeout = TimeSpan.FromSeconds(30)
                 };
             }
             catch {
                 // Fallback to plain HttpClient if Sentry SDK is unavailable (e.g. expired account)
-                _sharedHttpClient = new HttpClient() {
+                _defaultHttpClient = new HttpClient() {
                     Timeout = TimeSpan.FromSeconds(30)
                 };
             }
         }
 
+        private readonly HttpClient _httpClient;
         private readonly JsonSerializerOptions _jsonOptions;
         private readonly GsCircuitBreaker _circuitBreaker;
 
-        public GsApiClient() {
+        public GsApiClient() : this(_defaultHttpClient) { }
+
+        /// <summary>
+        /// Constructor that accepts a custom HttpClient for testing.
+        /// Production code uses the parameterless constructor which provides the shared Sentry-traced client.
+        /// </summary>
+        internal GsApiClient(HttpClient httpClient) {
+            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _jsonOptions = new JsonSerializerOptions {
                 PropertyNameCaseInsensitive = true
             };
@@ -63,34 +76,6 @@ namespace GsPlugin.Api {
         }
 
         #region Game Session Management
-
-        public class ScrobbleStartReq {
-            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            public string user_id { get; set; }
-            public string game_name { get; set; }
-            public string game_id { get; set; }
-            public string plugin_id { get; set; }
-            public string external_game_id { get; set; }
-            public object metadata { get; set; }
-            public string started_at { get; set; }
-        }
-
-        public class ScrobbleStartRes {
-            public string session_id { get; set; }
-        }
-
-        public class AsyncQueuedResponse {
-            public bool success { get; set; }
-            public string status { get; set; }
-            public string queueId { get; set; }
-            public string message { get; set; }
-            public string timestamp { get; set; }
-            public string estimatedProcessingTime { get; set; }
-            // Populated on cooldown responses (status == "skipped", reason starts with "cooldown_")
-            public string reason { get; set; }
-            public string cooldownExpiresAt { get; set; }
-            public string lastSyncAt { get; set; }
-        }
 
         public async Task<ScrobbleStartRes> StartGameSession(ScrobbleStartReq startData) {
             // Validate input before making API call
@@ -123,22 +108,6 @@ namespace GsPlugin.Api {
                 CaptureSentryMessage("Failed to queue scrobble start", SentryLevel.Error, startData.game_name, startData.user_id);
                 return null;
             }
-        }
-
-        public class ScrobbleFinishReq {
-            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            public string user_id { get; set; }
-            public string game_name { get; set; }
-            public string game_id { get; set; }
-            public string plugin_id { get; set; }
-            public string external_game_id { get; set; }
-            public object metadata { get; set; }
-            public string finished_at { get; set; }
-            public string session_id { get; set; }
-        }
-
-        public class ScrobbleFinishRes {
-            public string status { get; set; }
         }
 
         public async Task<ScrobbleFinishRes> FinishGameSession(ScrobbleFinishReq endData) {
@@ -263,110 +232,6 @@ namespace GsPlugin.Api {
 
         #region Library Synchronization
 
-        public class GameSyncDto {
-            public string game_id { get; set; }
-            public string plugin_id { get; set; }
-            public string game_name { get; set; }
-            public string playnite_id { get; set; }
-            public long playtime_seconds { get; set; }
-            public int play_count { get; set; }
-            public DateTime? last_activity { get; set; }
-            public bool is_installed { get; set; }
-            public string completion_status_id { get; set; }
-            public string completion_status_name { get; set; }
-            // Populated from SuccessStory plugin (cebe6d32-...) via reflection if installed.
-            // null when SuccessStory is absent or the game has no achievement data.
-            public int? achievement_count_unlocked { get; set; }
-            public int? achievement_count_total { get; set; }
-            // null when the collection is empty/not set in Playnite.
-            public List<string> genres { get; set; }
-            public List<string> platforms { get; set; }
-            public List<string> developers { get; set; }
-            public List<string> publishers { get; set; }
-            public List<string> tags { get; set; }
-            public List<string> features { get; set; }
-            public List<string> categories { get; set; }
-            public List<string> series { get; set; }
-            // Scores: null when not set in Playnite metadata.
-            public int? user_score { get; set; }
-            public int? critic_score { get; set; }
-            public int? community_score { get; set; }
-            // Release year only (Playnite's ReleaseDate is a partial struct; month/day are optional).
-            public int? release_year { get; set; }
-            // Date the game was added to the Playnite library.
-            public DateTime? date_added { get; set; }
-            public bool is_favorite { get; set; }
-            public bool is_hidden { get; set; }
-            // Library source name (e.g. "Steam", "GOG") — distinct from plugin_id.
-            public string source_name { get; set; }
-            // Full release date string: "YYYY-MM-DD" when day/month known, "YYYY" when year-only, null if unknown.
-            public string release_date { get; set; }
-            // When the game entry was last modified in Playnite.
-            public DateTime? modified { get; set; }
-            // null when the collection is empty/not set in Playnite.
-            public List<string> age_ratings { get; set; }
-            public List<string> regions { get; set; }
-        }
-
-        // --- v2 Library sync DTOs ---
-
-        public class LibraryFullSyncReq {
-            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            public string user_id { get; set; }
-            public List<GameSyncDto> library { get; set; }
-            public string[] flags { get; set; }
-            public List<Services.IntegrationAccountDto> integration_accounts { get; set; }
-        }
-
-        public class LibraryDiffSyncReq {
-            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            public string user_id { get; set; }
-            public List<GameSyncDto> added { get; set; }
-            public List<GameSyncDto> updated { get; set; }
-            public List<string> removed { get; set; }
-            public string base_snapshot_hash { get; set; }
-            public string[] flags { get; set; }
-            public List<Services.IntegrationAccountDto> integration_accounts { get; set; }
-        }
-
-        // --- v2 Achievement DTOs ---
-
-        public class AchievementItemDto {
-            public string name { get; set; }
-            public string description { get; set; }
-            public DateTime? date_unlocked { get; set; }
-            public bool is_unlocked { get; set; }
-            public float? rarity_percent { get; set; }
-        }
-
-        public class GameAchievementsDto {
-            public string playnite_id { get; set; }
-            public string game_id { get; set; }
-            public string plugin_id { get; set; }
-            public List<AchievementItemDto> achievements { get; set; }
-        }
-
-        public class AchievementsFullSyncReq {
-            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            public string user_id { get; set; }
-            public List<GameAchievementsDto> games { get; set; }
-        }
-
-        public class AchievementsDiffSyncReq {
-            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            public string user_id { get; set; }
-            public List<GameAchievementsDto> changed { get; set; }
-            public string base_snapshot_hash { get; set; }
-        }
-
-        public class AchievementSyncRes {
-            public bool success { get; set; }
-            public string status { get; set; }
-            public string reason { get; set; }
-            public string message { get; set; }
-            public string timestamp { get; set; }
-        }
-
         public async Task<AsyncQueuedResponse> SyncLibraryFull(LibraryFullSyncReq req) {
             if (req == null) {
                 _logger.Error("SyncLibraryFull called with null request");
@@ -435,18 +300,6 @@ namespace GsPlugin.Api {
 
         #region Install Token Registration
 
-        public class RegisterInstallTokenReq {
-            public string playnite_user_id { get; set; }
-        }
-
-        public class RegisterInstallTokenRes {
-            public bool success { get; set; }
-            public string token { get; set; }
-            public string message { get; set; }
-            public string error { get; set; }
-            public string error_code { get; set; }
-        }
-
         /// <summary>
         /// Registers the install with the server and retrieves a per-install auth token.
         /// Call once on first boot (or when InstallToken is missing from persistent storage).
@@ -467,7 +320,7 @@ namespace GsPlugin.Api {
                 string jsonData = JsonSerializer.Serialize(req, _jsonOptions);
                 using (var request = new HttpRequestMessage(HttpMethod.Post, url)) {
                     request.Content = new StringContent(jsonData, Encoding.UTF8, "application/json");
-                    HttpResponseMessage response = await _sharedHttpClient.SendAsync(request).ConfigureAwait(false);
+                    HttpResponseMessage response = await _httpClient.SendAsync(request).ConfigureAwait(false);
                     string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                     try {
@@ -484,12 +337,6 @@ namespace GsPlugin.Api {
                 GsSentry.CaptureException(ex, "RegisterInstallToken HTTP error");
                 return null;
             }
-        }
-
-        public class DashboardTokenRes {
-            public bool success { get; set; }
-            public string token { get; set; }
-            public int? expires_in { get; set; }
         }
 
         /// <summary>
@@ -527,7 +374,7 @@ namespace GsPlugin.Api {
                 using (var request = new HttpRequestMessage(HttpMethod.Post, url)) {
                     request.Headers.Add("x-playnite-token", installToken);
                     request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
-                    HttpResponseMessage response = await _sharedHttpClient.SendAsync(request).ConfigureAwait(false);
+                    HttpResponseMessage response = await _httpClient.SendAsync(request).ConfigureAwait(false);
                     string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                     if (!response.IsSuccessStatusCode) {
@@ -548,22 +395,6 @@ namespace GsPlugin.Api {
 
         #region Notifications
 
-        public class PlayniteNotificationDto {
-            public string id { get; set; }
-            public string title { get; set; }
-            public string message { get; set; }
-            public string notification_type { get; set; }
-            public string priority { get; set; }
-            public string action_url { get; set; }
-            public string action_label { get; set; }
-            public string created_at { get; set; }
-        }
-
-        public class PlayniteNotificationsRes {
-            public bool success { get; set; }
-            public List<PlayniteNotificationDto> notifications { get; set; }
-        }
-
         /// <summary>
         /// Fetches active notifications from the server for this install.
         /// Requires a valid InstallToken (x-playnite-token header).
@@ -582,7 +413,7 @@ namespace GsPlugin.Api {
             try {
                 using (var request = new HttpRequestMessage(HttpMethod.Get, url)) {
                     request.Headers.Add("x-playnite-token", installToken);
-                    HttpResponseMessage response = await _sharedHttpClient.SendAsync(request).ConfigureAwait(false);
+                    HttpResponseMessage response = await _httpClient.SendAsync(request).ConfigureAwait(false);
                     string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                     if (!response.IsSuccessStatusCode) {
@@ -619,7 +450,7 @@ namespace GsPlugin.Api {
                 using (var request = new HttpRequestMessage(HttpMethod.Post, url)) {
                     request.Headers.Add("x-playnite-token", currentToken);
                     request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
-                    HttpResponseMessage response = await _sharedHttpClient.SendAsync(request).ConfigureAwait(false);
+                    HttpResponseMessage response = await _httpClient.SendAsync(request).ConfigureAwait(false);
                     string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                     if (!response.IsSuccessStatusCode) {
@@ -642,18 +473,6 @@ namespace GsPlugin.Api {
 
         #region Allowed Plugins
 
-        public class AllowedPluginsRes {
-            public List<AllowedPluginEntry> plugins { get; set; }
-            public string source { get; set; }
-        }
-
-        public class AllowedPluginEntry {
-            public string pluginId { get; set; }
-            public string libraryName { get; set; }
-            public string sourceSlug { get; set; }
-            public string status { get; set; }
-        }
-
         public async Task<AllowedPluginsRes> GetAllowedPlugins() {
             return await _circuitBreaker.ExecuteAsync(async () => {
                 return await GetJsonAsync<AllowedPluginsRes>($"{_apiBaseUrl}/api/playnite/v2/allowed-plugins");
@@ -663,20 +482,6 @@ namespace GsPlugin.Api {
         #endregion
 
         #region Token Verification
-
-        public class TokenVerificationReq {
-            public string token { get; set; }
-            public string playniteId { get; set; }
-        }
-
-        public class TokenVerificationRes {
-            public bool success { get; set; }
-            public string message { get; set; }
-            public string userId { get; set; }
-            // Error fields returned on non-2xx responses
-            public string error { get; set; }
-            public string errorCode { get; set; }
-        }
 
         public async Task<TokenVerificationRes> VerifyToken(string token, string playniteId) {
             // Validate input before making API call
@@ -712,18 +517,6 @@ namespace GsPlugin.Api {
 
         #region Data Deletion
 
-        public class DeleteDataReq {
-            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            public string user_id { get; set; }
-        }
-
-        public class DeleteDataRes {
-            public bool success { get; set; }
-            public string message { get; set; }
-            // Set to true when the server returns 429 Too Many Requests
-            public bool rateLimited { get; set; }
-        }
-
         public async Task<DeleteDataRes> RequestDeleteMyData(DeleteDataReq req) {
             var installToken = GsDataManager.DataOrNull?.InstallToken;
             if (req == null || string.IsNullOrEmpty(installToken)) {
@@ -739,7 +532,7 @@ namespace GsPlugin.Api {
                 HttpResponseMessage response;
                 using (var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content }) {
                     request.Headers.Add("x-playnite-token", installToken);
-                    response = await _sharedHttpClient.SendAsync(request).ConfigureAwait(false);
+                    response = await _httpClient.SendAsync(request).ConfigureAwait(false);
                 }
                 string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
@@ -791,7 +584,7 @@ namespace GsPlugin.Api {
 
         private async Task<TResponse> GetJsonAsync<TResponse>(string url) where TResponse : class {
             try {
-                var response = await _sharedHttpClient.GetAsync(url).ConfigureAwait(false);
+                var response = await _httpClient.GetAsync(url).ConfigureAwait(false);
                 var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
                 GsLogger.ShowHTTPDebugBox(
@@ -868,10 +661,10 @@ namespace GsPlugin.Api {
                     if (!string.IsNullOrEmpty(installToken)) {
                         requestMessage = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
                         requestMessage.Headers.Add("x-playnite-token", installToken);
-                        response = await _sharedHttpClient.SendAsync(requestMessage).ConfigureAwait(false);
+                        response = await _httpClient.SendAsync(requestMessage).ConfigureAwait(false);
                     }
                     else {
-                        response = await _sharedHttpClient.PostAsync(url, content).ConfigureAwait(false);
+                        response = await _httpClient.PostAsync(url, content).ConfigureAwait(false);
                     }
                     responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 

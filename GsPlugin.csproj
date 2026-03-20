@@ -161,7 +161,7 @@
     <Compile Include="Infrastructure\GsPostHog.cs" />
     <Compile Include="Infrastructure\GsSentry.cs" />
     <!-- Api -->
-    <Compile Include="Api\ApiResult.cs" />
+    <Compile Include="Api\Dtos.cs" />
     <Compile Include="Api\GsApiClient.cs" />
     <Compile Include="Api\IGsApiClient.cs" />
     <Compile Include="Api\GsCircuitBreaker.cs" />

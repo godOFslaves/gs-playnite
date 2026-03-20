@@ -291,7 +291,7 @@ namespace GsPlugin.Tests {
                 PendingScrobbles = new List<PendingScrobble> {
                     new PendingScrobble {
                         Type = "start",
-                        StartData = new GsApiClient.ScrobbleStartReq {
+                        StartData = new ScrobbleStartReq {
                             user_id = "user-1",
                             game_name = "Test Game",
                             game_id = "game-guid-1",
@@ -303,7 +303,7 @@ namespace GsPlugin.Tests {
                     },
                     new PendingScrobble {
                         Type = "finish",
-                        FinishData = new GsApiClient.ScrobbleFinishReq {
+                        FinishData = new ScrobbleFinishReq {
                             user_id = "user-1",
                             session_id = "session-abc",
                             finished_at = "2025-01-01T11:00:00+00:00"

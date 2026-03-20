@@ -1,5 +1,4 @@
 using System.Threading.Tasks;
-using static GsPlugin.Api.GsApiClient;
 
 namespace GsPlugin.Api {
     /// <summary>

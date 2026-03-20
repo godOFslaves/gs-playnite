@@ -46,6 +46,7 @@ namespace GsPlugin {
         private GsUpdateChecker _updateChecker;
         private GsNotificationService _notificationService;
         private bool _disposed;
+        private int _librarySyncInFlight;
         private int _achievementSyncInFlight;
         private Timer _pendingFlushTimer;
         /// <summary>
@@ -496,7 +497,7 @@ namespace GsPlugin {
 
                 // Retry up to 3 times with exponential backoff (2 s, 4 s) for transient network errors.
                 // A non-null result (success or known error code) breaks the loop immediately.
-                GsApiClient.RegisterInstallTokenRes result = null;
+                RegisterInstallTokenRes result = null;
                 for (int attempt = 0; attempt < 3; attempt++) {
                     if (attempt > 0) {
                         await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
@@ -572,12 +573,23 @@ namespace GsPlugin {
 
         /// <summary>
         /// Runs a library sync using full or diff based on whether a snapshot baseline exists.
+        /// Guarded against concurrent execution — overlapping calls (startup + library-update + manual)
+        /// are skipped rather than allowed to interleave and corrupt snapshots.
         /// </summary>
         private async Task<GsScrobblingService.SyncLibraryResult> SyncLibraryWithDiffAsync() {
-            if (GsSnapshotManager.HasLibraryBaseline) {
-                return await _scrobblingService.SyncLibraryDiffAsync(PlayniteApi.Database.Games);
+            if (Interlocked.CompareExchange(ref _librarySyncInFlight, 1, 0) != 0) {
+                _logger.Info("Library sync already in flight — skipping.");
+                return GsScrobblingService.SyncLibraryResult.Skipped;
             }
-            return await _scrobblingService.SyncLibraryFullAsync(PlayniteApi.Database.Games);
+            try {
+                if (GsSnapshotManager.HasLibraryBaseline) {
+                    return await _scrobblingService.SyncLibraryDiffAsync(PlayniteApi.Database.Games);
+                }
+                return await _scrobblingService.SyncLibraryFullAsync(PlayniteApi.Database.Games);
+            }
+            finally {
+                Interlocked.Exchange(ref _librarySyncInFlight, 0);
+            }
         }
 
         /// <summary>
