@@ -8,11 +8,12 @@ using GsPlugin.Models;
 using Microsoft.Web.WebView2.Core;
 
 namespace GsPlugin.View {
-    public partial class MySidebarView : UserControl {
+    public partial class MySidebarView : UserControl, IDisposable {
 
         private readonly IGsApiClient _apiClient;
         private bool _webView2Ready;
         private DateTime _lastNavigatedAtUtc = DateTime.MinValue;
+        private bool _disposed;
 
         public MySidebarView(IGsApiClient apiClient) {
             InitializeComponent();
@@ -21,6 +22,7 @@ namespace GsPlugin.View {
             // One approach is to wait until the control is actually loaded in the visual tree.
             this.Loaded += MySidebarView_Loaded;
             this.IsVisibleChanged += MySidebarView_IsVisibleChanged;
+            this.Unloaded += MySidebarView_Unloaded;
         }
 
         private async void MySidebarView_Loaded(object sender, RoutedEventArgs e) {
@@ -34,38 +36,20 @@ namespace GsPlugin.View {
                     return;
                 }
 
-                // Restrict navigation to gamescrobbler.com domains only
-                MyWebView2.CoreWebView2.NavigationStarting += (s, args) => {
-                    if (args.Uri != null) {
-                        try {
-                            var uri = new Uri(args.Uri);
-                            if (uri.Host != "gamescrobbler.com" && !uri.Host.EndsWith(".gamescrobbler.com")) {
-                                args.Cancel = true;
-                                // Only open https links in the system browser
-                                if (uri.Scheme == "https") {
-                                    Process.Start(new ProcessStartInfo(args.Uri) { UseShellExecute = true });
-                                }
-                            }
-                        }
-                        catch (UriFormatException) {
-                            args.Cancel = true;
-                        }
-                    }
-                };
+                // Harden WebView2 security in Release builds.
+                // Keep DevTools enabled in Debug for development.
+                var settings = MyWebView2.CoreWebView2.Settings;
+#if !DEBUG
+                settings.AreDevToolsEnabled = false;
+                settings.AreHostObjectsAllowed = false;
+                settings.IsGeneralAutofillEnabled = false;
+                settings.IsPasswordAutosaveEnabled = false;
+#endif
+                settings.IsStatusBarEnabled = false;
 
-                MyWebView2.CoreWebView2.NewWindowRequested += (s, args) => {
-                    args.Handled = true;
-                    try {
-                        var uri = new Uri(args.Uri);
-                        // Only open https links in the system browser
-                        if (uri.Scheme == "https") {
-                            Process.Start(new ProcessStartInfo(args.Uri) { UseShellExecute = true });
-                        }
-                    }
-                    catch (Exception ex) {
-                        GsLogger.Warn($"Failed to open new window URL in browser: {ex.Message}");
-                    }
-                };
+                // Restrict navigation to gamescrobbler.com domains only
+                MyWebView2.CoreWebView2.NavigationStarting += CoreWebView2_NavigationStarting;
+                MyWebView2.CoreWebView2.NewWindowRequested += CoreWebView2_NewWindowRequested;
 
                 // Listen for messages from the frontend (e.g. "gs:refresh-token" when
                 // the dashboard session expires and the user clicks Retry).
@@ -78,6 +62,38 @@ namespace GsPlugin.View {
                 GsLogger.Error("Failed to initialize sidebar WebView2", ex);
                 GsSentry.CaptureException(ex, "Failed to initialize sidebar WebView2");
                 ShowErrorMessage("Failed to load Game Scrobbler dashboard. Please check that WebView2 runtime is installed.");
+            }
+        }
+
+        private void CoreWebView2_NavigationStarting(object sender, CoreWebView2NavigationStartingEventArgs args) {
+            if (args.Uri != null) {
+                try {
+                    var uri = new Uri(args.Uri);
+                    if (uri.Host != "gamescrobbler.com" && !uri.Host.EndsWith(".gamescrobbler.com")) {
+                        args.Cancel = true;
+                        // Only open https links in the system browser
+                        if (uri.Scheme == "https") {
+                            Process.Start(new ProcessStartInfo(args.Uri) { UseShellExecute = true });
+                        }
+                    }
+                }
+                catch (UriFormatException) {
+                    args.Cancel = true;
+                }
+            }
+        }
+
+        private void CoreWebView2_NewWindowRequested(object sender, CoreWebView2NewWindowRequestedEventArgs args) {
+            args.Handled = true;
+            try {
+                var uri = new Uri(args.Uri);
+                // Only open https links in the system browser
+                if (uri.Scheme == "https") {
+                    Process.Start(new ProcessStartInfo(args.Uri) { UseShellExecute = true });
+                }
+            }
+            catch (Exception ex) {
+                GsLogger.Warn($"Failed to open new window URL in browser: {ex.Message}");
             }
         }
 
@@ -99,6 +115,7 @@ namespace GsPlugin.View {
         /// Handles postMessage calls from the frontend. The dashboard sends
         /// "gs:refresh-token" when the session has expired and the user clicks Retry,
         /// so the plugin can fetch a fresh dashboard token and re-navigate.
+        /// Only the known "gs:" protocol prefix is accepted.
         /// </summary>
         private async void OnWebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs e) {
             try {
@@ -166,6 +183,32 @@ namespace GsPlugin.View {
                 GsLogger.Error("Failed to navigate to dashboard", ex);
                 GsSentry.CaptureException(ex, "Failed to navigate to dashboard");
                 ShowErrorMessage("Failed to load Game Scrobbler dashboard. Please try again later.");
+            }
+        }
+
+        private void MySidebarView_Unloaded(object sender, RoutedEventArgs e) {
+            Dispose();
+        }
+
+        public void Dispose() {
+            if (_disposed) return;
+            _disposed = true;
+
+            try {
+                this.Loaded -= MySidebarView_Loaded;
+                this.IsVisibleChanged -= MySidebarView_IsVisibleChanged;
+                this.Unloaded -= MySidebarView_Unloaded;
+
+                if (MyWebView2?.CoreWebView2 != null) {
+                    MyWebView2.CoreWebView2.NavigationStarting -= CoreWebView2_NavigationStarting;
+                    MyWebView2.CoreWebView2.NewWindowRequested -= CoreWebView2_NewWindowRequested;
+                    MyWebView2.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+                }
+
+                MyWebView2?.Dispose();
+            }
+            catch (Exception ex) {
+                GsLogger.Warn($"Error disposing MySidebarView: {ex.Message}");
             }
         }
 
