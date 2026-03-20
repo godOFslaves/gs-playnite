@@ -2,11 +2,48 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
-    <!-- Settings UI strings -->
-    <sys:String x:Key="LOCGsPluginScrobblingDisabledWarning">You will not be able to benefit from features that rely on session data</sys:String>
+    <!-- ── Section 1: Installation ID ── -->
+    <sys:String x:Key="LOCGsPluginInstallIdSectionTitle">Installation ID</sys:String>
+    <sys:String x:Key="LOCGsPluginInstallIdDescription">Your unique plugin installation identifier, used to link your account.</sys:String>
+    <sys:String x:Key="LOCGsPluginInstallIdCopyHint">Click the ID above to copy it to your clipboard.</sys:String>
+    <sys:String x:Key="LOCGsPluginInstallIdCopyTooltip">Click to copy ID to clipboard</sys:String>
+
+    <!-- ── Section 2: Theme &amp; Dashboard ── -->
+    <sys:String x:Key="LOCGsPluginThemeSectionTitle">Theme &amp; Dashboard</sys:String>
+    <sys:String x:Key="LOCGsPluginThemeDescription">Controls the visual theme applied to the Game Scrobbler sidebar and views.</sys:String>
+    <sys:String x:Key="LOCGsPluginNewDashboardExperienceLabel">New Dashboard Experience</sys:String>
+    <sys:String x:Key="LOCGsPluginNewDashboardExperienceTooltip">Enable the new dashboard experience with enhanced features</sys:String>
+
+    <!-- ── Section 3: Account Linking ── -->
+    <sys:String x:Key="LOCGsPluginAccountLinkingSectionTitle">Account Linking</sys:String>
+    <sys:String x:Key="LOCGsPluginLinkOnWebsiteButton">Link Account on Website</sys:String>
+    <sys:String x:Key="LOCGsPluginManualTokenSeparator">or enter your token manually</sys:String>
+    <sys:String x:Key="LOCGsPluginLinkAccountButton">Link Account</sys:String>
+
+    <!-- ── Section 4: Sync Settings ── -->
+    <sys:String x:Key="LOCGsPluginSyncSettingsSectionTitle">Sync Settings</sys:String>
     <sys:String x:Key="LOCGsPluginSyncAchievementsLabel">Sync achievement data (requires SuccessStory or Playnite Achievements addon)</sys:String>
     <sys:String x:Key="LOCGsPluginSyncAchievementsTooltip">Reads achievement data from SuccessStory or Playnite Achievements addon during library sync. Has no effect if neither is installed.</sys:String>
     <sys:String x:Key="LOCGsPluginAchievementProviderMissingWarning">No achievement addon found — achievement sync will be skipped.</sys:String>
     <sys:String x:Key="LOCGsPluginAchievementProviderInstallLink">Install an achievement addon</sys:String>
+    <sys:String x:Key="LOCGsPluginLibrarySyncLabel">Library Sync:</sys:String>
+
+    <!-- ── Section 5: Notifications ── -->
+    <sys:String x:Key="LOCGsPluginNotificationsSectionTitle">Notifications</sys:String>
+    <sys:String x:Key="LOCGsPluginShowUpdateNotificationsLabel">Show version update notifications</sys:String>
+    <sys:String x:Key="LOCGsPluginShowImportantNotificationsLabel">Show important notifications from GameScrobbler</sys:String>
+
+    <!-- ── Section 6: Privacy Controls ── -->
+    <sys:String x:Key="LOCGsPluginPrivacySectionTitle">Privacy Controls</sys:String>
+    <sys:String x:Key="LOCGsPluginDisableSentryLabel">Disable error reporting (Sentry)</sys:String>
+    <sys:String x:Key="LOCGsPluginDisablePostHogLabel">Disable analytics (PostHog)</sys:String>
+    <sys:String x:Key="LOCGsPluginDisableScrobblingLabel">Disable game activity tracking (Scrobbling)</sys:String>
+    <sys:String x:Key="LOCGsPluginScrobblingDisabledWarning">You will not be able to benefit from features that rely on session data</sys:String>
+
+    <!-- ── Section 7: Danger Zone ── -->
+    <sys:String x:Key="LOCGsPluginDangerZoneSectionTitle">Danger Zone</sys:String>
+    <sys:String x:Key="LOCGsPluginDangerZoneWarning">Please only use this option if you want to delete your Playnite data in the GameScrobbler servers. After your delete request you cannot continue using the GameScrobbler addon without opting in again.</sys:String>
+    <sys:String x:Key="LOCGsPluginDeleteMyDataButton">Delete My Data</sys:String>
+    <sys:String x:Key="LOCGsPluginOptBackInButton">Opt Back In</sys:String>
 
 </ResourceDictionary>

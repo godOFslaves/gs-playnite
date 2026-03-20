@@ -6,7 +6,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:local="clr-namespace:GsPlugin.View"
              mc:Ignorable="d"
-             d:DesignHeight="620" d:DesignWidth="620">
+             d:DesignHeight="700" d:DesignWidth="620">
 
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
@@ -123,12 +123,12 @@
 
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                         <Rectangle Style="{StaticResource AccentBarStyle}"/>
-                        <TextBlock Text="Installation ID" Style="{StaticResource SectionTitleStyle}"/>
+                        <TextBlock Text="{DynamicResource LOCGsPluginInstallIdSectionTitle}" Style="{StaticResource SectionTitleStyle}"/>
                     </StackPanel>
 
                     <TextBlock Style="{StaticResource MutedTextStyle}"
                                Margin="0,0,0,8"
-                               Text="Your unique plugin installation identifier, used to link your account."/>
+                               Text="{DynamicResource LOCGsPluginInstallIdDescription}"/>
 
                     <!-- Code-block styled ID display -->
                     <Border Background="{DynamicResource TextBoxBackgroundBrush}"
@@ -141,31 +141,38 @@
                                    FontSize="13"
                                    Foreground="{DynamicResource TextBrush}"
                                    Cursor="Hand"
-                                   ToolTip="Click to copy ID to clipboard"
+                                   ToolTip="{DynamicResource LOCGsPluginInstallIdCopyTooltip}"
                                    MouseLeftButtonUp="TextBlock_MouseLeftButtonUp"/>
                     </Border>
 
                     <TextBlock Style="{StaticResource MutedTextStyle}"
-                               Margin="0,5,0,0"
-                               Text="Click the ID above to copy it to your clipboard."/>
+                               Margin="0,5,0,8"
+                               Text="{DynamicResource LOCGsPluginInstallIdCopyHint}"/>
+
+                    <!-- Install token status indicator -->
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="InstallTokenStatusTextBlock"
+                                   FontSize="11"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
 
                 </StackPanel>
             </Border>
 
             <!-- ─────────────────────────────────────────
-                 SECTION 2 — THEME SELECTION
+                 SECTION 2 — THEME & DASHBOARD
             ───────────────────────────────────────── -->
             <Border Style="{StaticResource CardBorderStyle}">
                 <StackPanel>
 
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                         <Rectangle Style="{StaticResource AccentBarStyle}"/>
-                        <TextBlock Text="Theme" Style="{StaticResource SectionTitleStyle}"/>
+                        <TextBlock Text="{DynamicResource LOCGsPluginThemeSectionTitle}" Style="{StaticResource SectionTitleStyle}"/>
                     </StackPanel>
 
                     <TextBlock Style="{StaticResource MutedTextStyle}"
                                Margin="0,0,0,8"
-                               Text="Controls the visual theme applied to the Game Scrobbler sidebar and views."/>
+                               Text="{DynamicResource LOCGsPluginThemeDescription}"/>
 
                     <ComboBox x:Name="ThemeComboBox"
                               Width="180"
@@ -176,8 +183,16 @@
                               BorderThickness="1"
                               Padding="8,5"
                               FontSize="12"
+                              Margin="0,0,0,12"
                               ItemsSource="{Binding AvailableThemes}"
                               SelectedItem="{Binding Settings.Theme, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+
+                    <!-- New Dashboard Experience toggle (display feature, grouped with theme) -->
+                    <CheckBox Style="{StaticResource CheckBoxStyle}"
+                              Content="{DynamicResource LOCGsPluginNewDashboardExperienceLabel}"
+                              ToolTip="{DynamicResource LOCGsPluginNewDashboardExperienceTooltip}"
+                              IsChecked="{Binding Settings.NewDashboardExperience, Mode=TwoWay}"
+                              Margin="0,0,0,0"/>
 
                 </StackPanel>
             </Border>
@@ -190,7 +205,7 @@
 
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                         <Rectangle Style="{StaticResource AccentBarStyle}"/>
-                        <TextBlock Text="Account Linking" Style="{StaticResource SectionTitleStyle}"/>
+                        <TextBlock Text="{DynamicResource LOCGsPluginAccountLinkingSectionTitle}" Style="{StaticResource SectionTitleStyle}"/>
                     </StackPanel>
 
                     <!-- Hint with hyperlink -->
@@ -231,7 +246,7 @@
                     <!-- Open website button -->
                     <Button x:Name="OpenWebsiteToLinkButton"
                             Style="{StaticResource SecondaryButtonStyle}"
-                            Content="Link Account on Website"
+                            Content="{DynamicResource LOCGsPluginLinkOnWebsiteButton}"
                             HorizontalAlignment="Left"
                             Margin="0,0,0,12"
                             Click="OpenWebsiteToLink_Click"
@@ -254,7 +269,7 @@
                                    FontSize="11"
                                    Foreground="{DynamicResource TextBrushDarker}"
                                    VerticalAlignment="Center"
-                                   Text="or enter your token manually"/>
+                                   Text="{DynamicResource LOCGsPluginManualTokenSeparator}"/>
                         <Border Grid.Column="2"
                                 Height="1"
                                 Background="{DynamicResource NormalBorderBrush}"
@@ -279,7 +294,7 @@
                         <Button Grid.Column="1"
                                 x:Name="LinkAccountButton"
                                 Style="{StaticResource PrimaryButtonStyle}"
-                                Content="Link Account"
+                                Content="{DynamicResource LOCGsPluginLinkAccountButton}"
                                 Click="LinkAccount_Click"/>
                     </Grid>
 
@@ -294,34 +309,15 @@
             </Border>
 
             <!-- ─────────────────────────────────────────
-                 SECTION 4 — EXPERIMENTAL FEATURES
+                 SECTION 4 — SYNC SETTINGS
             ───────────────────────────────────────── -->
             <Border Style="{StaticResource CardBorderStyle}">
                 <StackPanel>
 
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                         <Rectangle Style="{StaticResource AccentBarStyle}"/>
-                        <TextBlock Text="Experimental Features" Style="{StaticResource SectionTitleStyle}"/>
-                        <Border Background="{DynamicResource TextBoxBackgroundBrush}"
-                                BorderBrush="{StaticResource AccentBrush}"
-                                BorderThickness="1"
-                                CornerRadius="4"
-                                Padding="6,2"
-                                Margin="8,0,0,0"
-                                VerticalAlignment="Center">
-                            <TextBlock Text="BETA"
-                                       FontSize="10"
-                                       FontWeight="Bold"
-                                       Foreground="{StaticResource AccentBrush}"
-                                       VerticalAlignment="Center"/>
-                        </Border>
+                        <TextBlock Text="{DynamicResource LOCGsPluginSyncSettingsSectionTitle}" Style="{StaticResource SectionTitleStyle}"/>
                     </StackPanel>
-
-                    <!-- New Dashboard -->
-                    <CheckBox Style="{StaticResource CheckBoxStyle}"
-                              Content="New Dashboard Experience"
-                              ToolTip="Enable the new dashboard experience with enhanced features"
-                              IsChecked="{Binding Settings.NewDashboardExperience, Mode=TwoWay}"/>
 
                     <!-- Achievement sync -->
                     <StackPanel Margin="0,0,0,4">
@@ -336,7 +332,7 @@
                                     Margin="20,0,0,4"
                                     Visibility="{Binding IsAnyAchievementProviderInstalled,
                                         Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="✓"
+                            <TextBlock Text="&#10003;"
                                        Foreground="#4CAF50"
                                        FontSize="12"
                                        Margin="0,0,6,0"
@@ -352,7 +348,7 @@
                                     Margin="20,0,0,0"
                                     Visibility="{Binding IsAllAchievementProvidersMissing,
                                         Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="⚠"
+                            <TextBlock Text="&#9888;"
                                        Foreground="#FFA500"
                                        FontSize="12"
                                        Margin="0,0,6,0"
@@ -378,9 +374,9 @@
                             BorderThickness="1"
                             CornerRadius="4"
                             Padding="10,6"
-                            Margin="0,8,0,0">
+                            Margin="0,8,0,4">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Library Sync:"
+                            <TextBlock Text="{DynamicResource LOCGsPluginLibrarySyncLabel}"
                                        FontSize="11"
                                        Foreground="{DynamicResource TextBrushDarker}"
                                        Margin="0,0,6,0"
@@ -388,6 +384,28 @@
                             <TextBlock x:Name="LastSyncStatusTextBlock"
                                        FontSize="11"
                                        Foreground="{DynamicResource TextBrush}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Pending scrobbles indicator — only visible when queue is non-empty -->
+                    <Border x:Name="PendingScrobblesBorder"
+                            Background="{DynamicResource TextBoxBackgroundBrush}"
+                            BorderBrush="#FFA500"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="10,6"
+                            Margin="0,4,0,0"
+                            Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#9888;"
+                                       Foreground="#FFA500"
+                                       FontSize="12"
+                                       Margin="0,0,6,0"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock x:Name="PendingScrobblesTextBlock"
+                                       FontSize="11"
+                                       Foreground="#FFA500"
                                        VerticalAlignment="Center"/>
                         </StackPanel>
                     </Border>
@@ -403,16 +421,16 @@
 
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                         <Rectangle Style="{StaticResource AccentBarStyle}"/>
-                        <TextBlock Text="Notifications" Style="{StaticResource SectionTitleStyle}"/>
+                        <TextBlock Text="{DynamicResource LOCGsPluginNotificationsSectionTitle}" Style="{StaticResource SectionTitleStyle}"/>
                     </StackPanel>
 
                     <CheckBox Style="{StaticResource CheckBoxStyle}"
-                              Content="Show version update notifications"
+                              Content="{DynamicResource LOCGsPluginShowUpdateNotificationsLabel}"
                               ToolTip="Show a notification in Playnite when a new plugin version is available"
                               IsChecked="{Binding Settings.ShowUpdateNotifications, Mode=TwoWay}"/>
 
                     <CheckBox Style="{StaticResource CheckBoxStyle}"
-                              Content="Show important notifications from GameScrobbler"
+                              Content="{DynamicResource LOCGsPluginShowImportantNotificationsLabel}"
                               ToolTip="Show notifications about important updates and announcements"
                               IsChecked="{Binding Settings.ShowImportantNotifications, Mode=TwoWay}"/>
 
@@ -427,22 +445,22 @@
 
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                         <Rectangle Style="{StaticResource AccentBarStyle}"/>
-                        <TextBlock Text="Privacy Controls" Style="{StaticResource SectionTitleStyle}"/>
+                        <TextBlock Text="{DynamicResource LOCGsPluginPrivacySectionTitle}" Style="{StaticResource SectionTitleStyle}"/>
                     </StackPanel>
 
                     <CheckBox Style="{StaticResource CheckBoxStyle}"
-                              Content="Disable error reporting (Sentry)"
+                              Content="{DynamicResource LOCGsPluginDisableSentryLabel}"
                               ToolTip="Prevents sending crash reports and diagnostic data to improve the plugin"
                               IsChecked="{Binding Settings.DisableSentry, Mode=TwoWay}"/>
 
                     <CheckBox Style="{StaticResource CheckBoxStyle}"
-                              Content="Disable analytics (PostHog)"
+                              Content="{DynamicResource LOCGsPluginDisablePostHogLabel}"
                               ToolTip="Prevents sending anonymous usage analytics to help improve the plugin"
                               IsChecked="{Binding Settings.DisablePostHog, Mode=TwoWay}"/>
 
                     <CheckBox x:Name="DisableScrobblingCheckBox"
                               Style="{StaticResource CheckBoxStyle}"
-                              Content="Disable game activity tracking (Scrobbling)"
+                              Content="{DynamicResource LOCGsPluginDisableScrobblingLabel}"
                               ToolTip="Prevents scrobbling of your game playing activity"
                               Margin="0,0,0,6"
                               IsChecked="{Binding Settings.DisableScrobbling, Mode=TwoWay}"/>
@@ -452,7 +470,7 @@
                                 Margin="20,0,0,0"
                                 Visibility="{Binding Settings.DisableScrobbling,
                                     Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <TextBlock Text="⚠"
+                        <TextBlock Text="&#9888;"
                                    Foreground="#FFA500"
                                    FontSize="13"
                                    Margin="0,0,8,0"
@@ -478,7 +496,8 @@
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                         <Rectangle Style="{StaticResource AccentBarStyle}"
                                    Fill="#E53E3E"/>
-                        <TextBlock Text="Danger Zone" Style="{StaticResource SectionTitleStyle}"
+                        <TextBlock Text="{DynamicResource LOCGsPluginDangerZoneSectionTitle}"
+                                   Style="{StaticResource SectionTitleStyle}"
                                    Foreground="#E53E3E"/>
                     </StackPanel>
 
@@ -486,10 +505,10 @@
                                FontSize="11"
                                TextWrapping="Wrap"
                                Margin="0,0,0,12"
-                               Text="Please only use this option if you want to delete your Playnite data in the GameScrobbler servers. After your delete request you cannot continue using the GameScrobbler addon without opting in again."/>
+                               Text="{DynamicResource LOCGsPluginDangerZoneWarning}"/>
 
                     <Button x:Name="DeleteMyDataButton"
-                            Content="Delete My Data"
+                            Content="{DynamicResource LOCGsPluginDeleteMyDataButton}"
                             HorizontalAlignment="Left"
                             Margin="0,0,0,8"
                             Padding="14,7"
@@ -518,7 +537,7 @@
 
                     <Button x:Name="OptBackInButton"
                             Style="{StaticResource PrimaryButtonStyle}"
-                            Content="Opt Back In"
+                            Content="{DynamicResource LOCGsPluginOptBackInButton}"
                             HorizontalAlignment="Left"
                             Margin="0,0,0,8"
                             Visibility="Collapsed"

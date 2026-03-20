@@ -34,6 +34,8 @@ namespace GsPlugin.View {
 
             // Subscribe to static linking status changes (single source of truth)
             GsAccountLinkingService.LinkingStatusChanged += OnLinkingStatusChanged;
+            // Subscribe to token/queue state changes for diagnostics indicators
+            GsDataManager.DiagnosticsStateChanged += OnDiagnosticsStateChanged;
         }
         #endregion
 
@@ -48,6 +50,7 @@ namespace GsPlugin.View {
         private void GsPluginSettingsView_Unloaded(object sender, RoutedEventArgs e) {
             // Unsubscribe from events to prevent memory leaks
             GsAccountLinkingService.LinkingStatusChanged -= OnLinkingStatusChanged;
+            GsDataManager.DiagnosticsStateChanged -= OnDiagnosticsStateChanged;
 
             if (_viewModel != null) {
                 _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
@@ -75,6 +78,32 @@ namespace GsPlugin.View {
             IDTextBlock.Text = GsDataManager.Data.InstallID;
             // Display last sync status (static property — cannot use XAML {Binding})
             LastSyncStatusTextBlock.Text = GsPluginSettingsViewModel.LastSyncStatus;
+            // Display install token status
+            UpdateInstallTokenStatus();
+            // Display pending scrobble count if any
+            UpdatePendingScrobblesStatus();
+        }
+
+        private void UpdateInstallTokenStatus() {
+            if (GsPluginSettingsViewModel.IsInstallTokenActive) {
+                InstallTokenStatusTextBlock.Text = "\u2713 Token: Active";
+                InstallTokenStatusTextBlock.Foreground = new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50));
+            }
+            else {
+                InstallTokenStatusTextBlock.Text = "\u26A0 Token: Pending registration";
+                InstallTokenStatusTextBlock.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xA5, 0x00));
+            }
+        }
+
+        private void UpdatePendingScrobblesStatus() {
+            int count = GsPluginSettingsViewModel.PendingScrobbleCount;
+            if (count > 0) {
+                PendingScrobblesTextBlock.Text = $"{count} scrobble{(count == 1 ? "" : "s")} queued — will retry automatically";
+                PendingScrobblesBorder.Visibility = Visibility.Visible;
+            }
+            else {
+                PendingScrobblesBorder.Visibility = Visibility.Collapsed;
+            }
         }
 
         /// <summary>
@@ -110,6 +139,13 @@ namespace GsPlugin.View {
             Dispatcher.Invoke(() => {
                 UpdateConnectionStatus();
                 UpdateOptOutState();
+            });
+        }
+
+        private void OnDiagnosticsStateChanged(object sender, EventArgs e) {
+            Dispatcher.Invoke(() => {
+                UpdateInstallTokenStatus();
+                UpdatePendingScrobblesStatus();
             });
         }
 

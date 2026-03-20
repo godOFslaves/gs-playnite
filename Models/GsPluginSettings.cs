@@ -185,6 +185,17 @@ namespace GsPlugin.Models {
             : "Disconnected";
         public static bool ShowLinkingControls => !IsLinked;
 
+        /// <summary>True when the install has a server-issued auth token.</summary>
+        public static bool IsInstallTokenActive =>
+            !string.IsNullOrEmpty(GsDataManager.DataOrNull?.InstallToken);
+
+        /// <summary>Number of scrobbles waiting to be sent to the server.</summary>
+        public static int PendingScrobbleCount =>
+            GsDataManager.DataOrNull?.PendingScrobbles?.Count ?? 0;
+
+        /// <summary>True when there is at least one pending scrobble.</summary>
+        public static bool HasPendingScrobbles => PendingScrobbleCount > 0;
+
         public static string LastSyncStatus {
             get {
                 var syncAt = GsDataManager.Data.LastSyncAt;
