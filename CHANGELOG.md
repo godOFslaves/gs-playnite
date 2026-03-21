@@ -1,5 +1,35 @@
 # Changelog
 
+## [2.3.0](https://github.com/game-scrobbler/gs-playnite/compare/GsPlugin-v2.2.0...GsPlugin-v2.3.0) (2026-03-21)
+
+
+### Features
+
+* add opt-out and delete my data support ([88a04ef](https://github.com/game-scrobbler/gs-playnite/commit/88a04efdaacd8592cd139943716b02d64d703992))
+* add opt-out, delete my data, and fix update notification ([d559a6f](https://github.com/game-scrobbler/gs-playnite/commit/d559a6f94021f3dc2a49e7076220bb076c24090e))
+* add per-install token authentication and identity management ([a75cb9e](https://github.com/game-scrobbler/gs-playnite/commit/a75cb9ec280d40489108ceaecd4bce980cde2273))
+* add server notification system with settings controls ([9b519c7](https://github.com/game-scrobbler/gs-playnite/commit/9b519c705f30730c3eb6ce8141638e9a0f8bb35c))
+* add sidebar dashboard auto-refresh with token expiry detection ([a17ab59](https://github.com/game-scrobbler/gs-playnite/commit/a17ab59598c77af85497564ccec70ad6573cc94c))
+* crash-safe pending scrobble flush with periodic retry and startup improvements ([8a20107](https://github.com/game-scrobbler/gs-playnite/commit/8a20107ce3cb37b8de50adddf4079a18cb40371e))
+* overhaul settings view with localized sections and diagnostics ([52281b9](https://github.com/game-scrobbler/gs-playnite/commit/52281b91320f8c06db2978223e31a336d430b340))
+
+
+### Bug Fixes
+
+* add MutateAndSave for atomic data mutations and library sync guard ([715058c](https://github.com/game-scrobbler/gs-playnite/commit/715058ca8bff727202c55cfbe2ea88d8d592b444))
+* add System.Net.Http reference to test project for HttpClient tests ([db89bb3](https://github.com/game-scrobbler/gs-playnite/commit/db89bb35e82e016e4b9be8c508ed01c08d67d17f))
+* harden achievement providers and infrastructure resilience ([b56ed1c](https://github.com/game-scrobbler/gs-playnite/commit/b56ed1c4c15841dbd7def401715530329775cd7f))
+* harden WebView2 security and remove dead code ([cb415ee](https://github.com/game-scrobbler/gs-playnite/commit/cb415ee64bf454c34eccd95c4661ea6c87293a8e))
+* open Add-ons dialog instead of plugin settings on update notification click ([05d9889](https://github.com/game-scrobbler/gs-playnite/commit/05d98895357cd7d78b9d280d0e56d5058d17bc18))
+* remove missing package urls and add changelogs to installer manifest ([bfb4b20](https://github.com/game-scrobbler/gs-playnite/commit/bfb4b200007641e3501d478ed601fa478d77a457))
+* revert debug API URL and restore permissive pre-commit hook ([4be29b2](https://github.com/game-scrobbler/gs-playnite/commit/4be29b2ecf692a22a533c2ff050793d5a90fc41e))
+* use theme-aware TextBrush for library sync status text ([77b9378](https://github.com/game-scrobbler/gs-playnite/commit/77b9378ea2596c024782443dd90d91096e7e0a12))
+
+
+### Performance Improvements
+
+* cache reflection lookups and replace debug MessageBox with logging ([86e5fe2](https://github.com/game-scrobbler/gs-playnite/commit/86e5fe28406e1b9841ded51ccf19dc22b448b6be))
+
 ## [2.2.0](https://github.com/game-scrobbler/gs-playnite/compare/GsPlugin-v2.1.1...GsPlugin-v2.2.0) (2026-03-10)
 
 
