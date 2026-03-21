@@ -155,25 +155,22 @@ namespace GsPlugin.View {
                         : null;
 
                     if (!string.IsNullOrEmpty(dashboardToken)) {
-                        url = $"https://gamescrobbler.com/dashboard/playnite?access_token={Uri.EscapeDataString(dashboardToken)}&theme={theme}";
+                        url = $"https://gamescrobbler.com/dashboard/hub?access_token={Uri.EscapeDataString(dashboardToken)}&theme={theme}";
                         GsLogger.Info("Dashboard URL built with access_token (install UUID not in URL)");
                     }
                     else {
-                        // Dashboard-token request failed (network/server error) — fail closed
-                        // rather than falling back to the user_id URL which would leak the
-                        // install UUID into browser history for already-registered installs.
+                        // Dashboard-token request failed (network/server error) — fail closed.
                         GsLogger.Error("GetDashboardToken failed for a registered install; aborting dashboard navigation");
                         ShowErrorMessage("Failed to load Game Scrobbler dashboard. Please try again later.");
                         return;
                     }
                 }
                 else {
-                    // No install token yet — use bare install ID (pre-registration behaviour).
-                    // Context flags are only sent via the token POST body once registered;
-                    // unregistered installs use server defaults until token registration completes.
-                    string userId = Uri.EscapeDataString(GsDataManager.Data.InstallID);
-                    url = $"https://gamescrobbler.com/dashboard/playnite?user_id={userId}&theme={theme}";
-                    GsLogger.Warn("Dashboard URL built with user_id fallback (install not yet registered)");
+                    // No install token yet — should not happen (EnsureInstallTokenAsync runs
+                    // before sidebar is accessible), but handle gracefully.
+                    GsLogger.Error("NavigateToDashboard called without install token; aborting");
+                    ShowErrorMessage("Failed to load Game Scrobbler dashboard. Please try again later.");
+                    return;
                 }
 
                 _lastNavigatedAtUtc = DateTime.UtcNow;
