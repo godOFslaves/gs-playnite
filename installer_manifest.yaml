@@ -1,6 +1,28 @@
 AddonId: 32975fed-6915-4dd3-a230-030cdc5265ae
 
 Packages:
+  - Version: 2.3.0
+    RequiredApiVersion: 6.12.0
+    ReleaseDate: 2026-03-21
+    PackageUrl: https://github.com/game-scrobbler/gs-playnite/releases/download/GsPlugin-v2.3.0/GsPlugin-v2.3.0.pext
+    Changelog:
+      - Try our new Chat with your library and Timeline features on your GameScrobbler dashboard!
+      - add opt-out and delete my data support
+      - add opt-out, delete my data, and fix update notification
+      - add per-install token authentication and identity management
+      - add server notification system with settings controls
+      - add sidebar dashboard auto-refresh with token expiry detection
+      - crash-safe pending scrobble flush with periodic retry and startup improvements
+      - overhaul settings view with localized sections and diagnostics
+      - add MutateAndSave for atomic data mutations and library sync guard
+      - add System.Net.Http reference to test project for HttpClient tests
+      - harden achievement providers and infrastructure resilience
+      - harden WebView2 security and remove dead code
+      - open Add-ons dialog instead of plugin settings on update notification click
+      - remove missing package urls and add changelogs to installer manifest
+      - revert debug API URL and restore permissive pre-commit hook
+      - use theme-aware TextBrush for library sync status text
+      - cache reflection lookups and replace debug MessageBox with logging
   - Version: 2.2.0
     RequiredApiVersion: 6.12.0
     ReleaseDate: 2026-03-10
