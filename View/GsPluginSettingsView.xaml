@@ -39,8 +39,9 @@
             <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
 
-        <!-- TextBox that inherits Playnite theme -->
-        <Style x:Key="DarkTextBoxStyle" TargetType="TextBox">
+        <!-- TextBox that inherits Playnite theme — BasedOn preserves the theme's ControlTemplate
+             so the TextBox stays editable across all Playnite themes -->
+        <Style x:Key="DarkTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
             <Setter Property="Background" Value="{DynamicResource TextBoxBackgroundBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource NormalBorderBrush}"/>
