@@ -495,17 +495,53 @@ namespace GsPlugin.Api {
                 playniteId = playniteId,
             };
 
-            return await _circuitBreaker.ExecuteAsync(async () => {
-                var res = await PostJsonAsync<TokenVerificationRes>(
-                    $"{_nextApiBaseUrl}/api/auth/playnite/verify", payload);
+            string url = $"{_nextApiBaseUrl}/api/auth/playnite/verify";
 
-                // Promote the error field to message so callers always read result.message
-                if (res != null && !res.success && string.IsNullOrEmpty(res.message) && !string.IsNullOrEmpty(res.error)) {
-                    res.message = res.error;
+            try {
+                string jsonData = JsonSerializer.Serialize(payload, _jsonOptions);
+                using (var request = new HttpRequestMessage(HttpMethod.Post, url)) {
+                    request.Content = new StringContent(jsonData, Encoding.UTF8, "application/json");
+                    HttpResponseMessage response = await _httpClient.SendAsync(request).ConfigureAwait(false);
+                    string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                    if (string.IsNullOrWhiteSpace(responseBody)) {
+                        _logger.Warn($"VerifyToken received empty response body (status {(int)response.StatusCode})");
+                        return null;
+                    }
+
+                    // Parse response body even on non-2xx status codes so the caller
+                    // receives the actual server error message (e.g. "Token expired")
+                    // instead of a generic "network error".
+                    TokenVerificationRes res;
+                    try {
+                        res = JsonSerializer.Deserialize<TokenVerificationRes>(responseBody, _jsonOptions);
+                    }
+                    catch (JsonException jsonEx) {
+                        _logger.Error(jsonEx, $"VerifyToken failed to parse response (status {(int)response.StatusCode})");
+                        return null;
+                    }
+
+                    if (res == null) return null;
+
+                    // On non-2xx, mark as failed and surface the server error message
+                    if (!response.IsSuccessStatusCode) {
+                        res.success = false;
+                        _logger.Warn($"VerifyToken returned {(int)response.StatusCode}: {res.error ?? res.message ?? "unknown"}");
+                    }
+
+                    // Promote the error field to message so callers always read result.message
+                    if (!res.success && string.IsNullOrEmpty(res.message) && !string.IsNullOrEmpty(res.error)) {
+                        res.message = res.error;
+                    }
+
+                    return res;
                 }
-
-                return res;
-            }, maxRetries: 1); // Token verification is less critical, only retry once
+            }
+            catch (Exception ex) {
+                _logger.Error(ex, "VerifyToken HTTP error");
+                GsSentry.CaptureException(ex, "VerifyToken HTTP error");
+                return null; // True network error — caller will show network error message
+            }
         }
 
         #endregion
