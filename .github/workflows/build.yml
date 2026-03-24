@@ -26,17 +26,21 @@ jobs:
           repository: cloudbase/powershell-yaml
           path: powershell-yaml
 
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
       - name: NuGet Restore
         run: nuget restore .\GsPlugin.sln
 
-      - name: Verify Code Formatting
-        run: |
-          echo "Running code formatting checks..."
-          dotnet format .\GsPlugin.sln  --verify-no-changes
-        continue-on-error: false
+      # Code formatting is enforced by the pre-commit hook (dotnet format --verify-no-changes).
+      # CI cannot run dotnet format on this solution because the .NET 8 SDK on windows-2022
+      # is missing BuildHost-net472, which is required to load old-style .NET Framework .csproj
+      # files (including transitively via ProjectReference from the SDK-style test project).
 
       - name: Build Entire Solution (.NET Framework 4.6.2)
         run: msbuild $Env:GITHUB_WORKSPACE\GsPlugin.sln -p:Configuration=Release -restore -clp:ErrorsOnly

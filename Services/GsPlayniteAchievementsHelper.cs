@@ -110,6 +110,10 @@ namespace GsPlugin.Services {
                 GsLogger.Warn($"[GsPlayniteAchievementsHelper] Achievement lookup failed for game {gameId}: {ex.InnerException?.Message ?? ex.Message}");
                 return null;
             }
+            catch (InvalidOperationException ex) {
+                GsLogger.Warn($"[GsPlayniteAchievementsHelper] JValue/InvalidOp in GetAchievements for game {gameId}: {ex.Message}");
+                return null;
+            }
             catch (Exception ex) {
                 GsLogger.Warn(
                     $"[GsPlayniteAchievementsHelper] Achievement lookup failed for game {gameId}: {ex.Message}"

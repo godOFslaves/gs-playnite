@@ -102,10 +102,13 @@ namespace GsPlugin.Models {
         public List<string> ShownNotificationIds { get; set; } = new List<string>();
 
         public void UpdateFlags(bool disableSentry, bool disableScrobbling, bool disablePostHog = false) {
-            Flags.Clear();
-            if (disableSentry) Flags.Add("no-sentry");
-            if (disableScrobbling) Flags.Add("no-scrobble");
-            if (disablePostHog) Flags.Add("no-posthog");
+            // Build a new list and swap atomically to avoid IndexOutOfRangeException
+            // when concurrent readers iterate via Flags.Contains() without a lock.
+            var newFlags = new List<string>();
+            if (disableSentry) newFlags.Add("no-sentry");
+            if (disableScrobbling) newFlags.Add("no-scrobble");
+            if (disablePostHog) newFlags.Add("no-posthog");
+            Flags = newFlags;
         }
     }
 

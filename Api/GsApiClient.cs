@@ -63,7 +63,7 @@ namespace GsPlugin.Api {
                 retryDelay: TimeSpan.FromSeconds(10));
             _circuitBreaker.OnCircuitClosed += () => {
                 _ = FlushPendingScrobblesAsync().ContinueWith(t => {
-                    if (t.IsFaulted && t.Exception != null) {
+                    if (t.Exception != null) {
                         _logger.Error(t.Exception.GetBaseException(), "Unhandled exception in FlushPendingScrobblesAsync (circuit recovery)");
                     }
                 }, TaskContinuationOptions.OnlyOnFaulted);
@@ -100,7 +100,7 @@ namespace GsPlugin.Api {
             }
             else {
                 GsLogger.Error("Failed to queue scrobble start request");
-                CaptureSentryMessage("Failed to queue scrobble start", SentryLevel.Error, startData.game_name, startData.user_id);
+                CaptureSentryMessage("Failed to queue scrobble start", SentryLevel.Warning, startData.game_name, startData.user_id);
                 return null;
             }
         }
@@ -596,12 +596,17 @@ namespace GsPlugin.Api {
                     return null;
                 }
 
+                var contentType = response?.Content?.Headers?.ContentType?.MediaType;
+                if (contentType != null && contentType.Contains("html")) {
+                    _logger.Warn($"GET {url} returned HTML content-type instead of JSON — likely a proxy error page");
+                    return null;
+                }
+
                 try {
                     return JsonSerializer.Deserialize<TResponse>(responseBody, _jsonOptions);
                 }
                 catch (JsonException jsonEx) {
-                    _logger.Error(jsonEx, $"Failed to deserialize JSON response from GET {url}. Response: {responseBody}");
-                    GsSentry.CaptureException(jsonEx, $"JSON deserialization failed for GET {url}");
+                    _logger.Error(jsonEx, $"Failed to deserialize JSON response from GET {url}. Response body starts with: {(responseBody.Length > 100 ? responseBody.Substring(0, 100) : responseBody)}");
                     return null;
                 }
             }
@@ -686,6 +691,14 @@ namespace GsPlugin.Api {
                         return null;
                     }
 
+                    // Detect HTML error pages returned by reverse proxies (e.g. Cloudflare, nginx)
+                    // that arrive with a 200 status code but are not JSON.
+                    var contentType = response?.Content?.Headers?.ContentType?.MediaType;
+                    if (contentType != null && contentType.Contains("html")) {
+                        _logger.Warn($"POST {url} returned HTML content-type instead of JSON — likely a proxy error page");
+                        return null;
+                    }
+
                     try {
                         var deserializedResponse = JsonSerializer.Deserialize<TResponse>(responseBody, _jsonOptions);
                         if (deserializedResponse == null) {
@@ -694,8 +707,7 @@ namespace GsPlugin.Api {
                         return deserializedResponse;
                     }
                     catch (JsonException jsonEx) {
-                        _logger.Error(jsonEx, $"Failed to deserialize JSON response from {url}. Response: {responseBody}");
-                        GsSentry.CaptureException(jsonEx, $"JSON deserialization failed for {url}");
+                        _logger.Error(jsonEx, $"Failed to deserialize JSON response from {url}. Response body starts with: {(responseBody.Length > 100 ? responseBody.Substring(0, 100) : responseBody)}");
                         return null;
                     }
                 }

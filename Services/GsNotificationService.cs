@@ -140,7 +140,7 @@ namespace GsPlugin.Services {
                 }
                 return () => {
                     try {
-                        Process.Start(actionUrl);
+                        Process.Start(new ProcessStartInfo(actionUrl) { UseShellExecute = true });
                     }
                     catch (Exception ex) {
                         GsLogger.Warn($"Failed to open URL {actionUrl}: {ex.Message}");

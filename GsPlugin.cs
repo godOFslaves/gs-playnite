@@ -25,6 +25,7 @@ namespace GsPlugin {
         /// Resolves assembly version mismatches at runtime.
         /// Playnite hosts plugins in its own AppDomain and does not honour plugin-level
         /// binding redirects, so we redirect assemblies that ship with the plugin ourselves.
+        /// Also registers a safety net for unobserved task exceptions to prevent finalizer crashes.
         /// </summary>
         static GsPlugin() {
             var pluginDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
@@ -35,6 +36,16 @@ namespace GsPlugin {
                     return Assembly.LoadFrom(path);
                 }
                 return null;
+            };
+
+            // Prevent unobserved task exceptions from crashing the finalizer thread.
+            // Fire-and-forget tasks that throw without being awaited surface here.
+            TaskScheduler.UnobservedTaskException += (sender, e) => {
+                e.SetObserved();
+                try {
+                    _logger.Warn(e.Exception?.GetBaseException(), "Unobserved task exception (swallowed)");
+                }
+                catch { /* logging must not throw */ }
             };
         }
         private GsPluginSettingsViewModel _settings { get; set; }
@@ -232,10 +243,15 @@ namespace GsPlugin {
                     if (_disposed) return;
                     var api = _apiClient;
                     if (api == null || GsDataManager.IsOptedOut) return;
-                    _ = api.FlushPendingScrobblesAsync().ContinueWith(t => {
-                        if (t.IsFaulted)
-                            _logger.Warn(t.Exception?.GetBaseException(), "Periodic pending flush failed");
-                    });
+                    try {
+                        _ = api.FlushPendingScrobblesAsync().ContinueWith(t => {
+                            if (t.IsFaulted)
+                                _logger.Warn(t.Exception?.GetBaseException(), "Periodic pending flush failed");
+                        }, TaskContinuationOptions.OnlyOnFaulted);
+                    }
+                    catch (ObjectDisposedException) {
+                        // Timer fired after Dispose() — safe to ignore
+                    }
                 }, null, (int)TimeSpan.FromMinutes(5).TotalMilliseconds, (int)TimeSpan.FromMinutes(5).TotalMilliseconds);
 
                 var startupSyncResult = await SyncLibraryWithDiffAsync();
@@ -263,7 +279,10 @@ namespace GsPlugin {
                 // Cooldown/Skipped mean library items already exist in the DB,
                 // so achievement FK references are valid.
                 if (startupSyncResult != GsScrobblingService.SyncLibraryResult.Error) {
-                    _ = SyncAchievementsWithDiffAsync();
+                    _ = SyncAchievementsWithDiffAsync().ContinueWith(t => {
+                        if (t.IsFaulted)
+                            _logger.Warn(t.Exception?.GetBaseException(), "Startup achievement sync failed");
+                    }, TaskContinuationOptions.OnlyOnFaulted);
                 }
 
                 sw.Stop();
@@ -317,7 +336,10 @@ namespace GsPlugin {
                 }
 
                 if (librarySyncResult != GsScrobblingService.SyncLibraryResult.Error) {
-                    _ = SyncAchievementsWithDiffAsync();
+                    _ = SyncAchievementsWithDiffAsync().ContinueWith(t => {
+                        if (t.IsFaulted)
+                            _logger.Warn(t.Exception?.GetBaseException(), "Library-update achievement sync failed");
+                    }, TaskContinuationOptions.OnlyOnFaulted);
                 }
             }
             catch (Exception ex) {
@@ -370,18 +392,25 @@ namespace GsPlugin {
         /// <returns>A collection of SidebarItem objects to be displayed in the sidebar.</returns>
         public override IEnumerable<SidebarItem> GetSidebarItems() {
             if (GsDataManager.IsOptedOut) yield break;
-            // Load the icon from the plugin directory
-            var iconPath = Path.Combine(Path.GetDirectoryName(GetType().Assembly.Location), "icon.png");
-            var iconImage = new Image {
-                Source = new BitmapImage(new Uri(iconPath))
-            };
+            // Load the icon from the plugin directory, with a fallback if the file is missing or corrupt
+            object iconImage = null;
+            try {
+                var iconPath = Path.Combine(Path.GetDirectoryName(GetType().Assembly.Location), "icon.png");
+                if (File.Exists(iconPath)) {
+                    iconImage = new Image {
+                        Source = new BitmapImage(new Uri(iconPath))
+                    };
+                }
+            }
+            catch (Exception ex) {
+                _logger.Warn(ex, "Failed to load sidebar icon");
+            }
 
             yield return new SidebarItem {
                 Type = (SiderbarItemType)1,
                 Title = "Game Scrobbler",
                 Icon = iconImage,
                 Opened = () => {
-                    // Return a new instance of your custom UserControl (WPF)
                     return new MySidebarView(_apiClient);
                 },
             };
@@ -449,7 +478,10 @@ namespace GsPlugin {
                         }
 
                         if (result != GsScrobblingService.SyncLibraryResult.Error) {
-                            _ = SyncAchievementsWithDiffAsync();
+                            _ = SyncAchievementsWithDiffAsync().ContinueWith(t => {
+                                if (t.IsFaulted)
+                                    _logger.Warn(t.Exception?.GetBaseException(), "Manual achievement sync failed");
+                            }, TaskContinuationOptions.OnlyOnFaulted);
                         }
                         PlayniteApi.Dialogs.ShowMessage(message, "Game Scrobbler");
                     }

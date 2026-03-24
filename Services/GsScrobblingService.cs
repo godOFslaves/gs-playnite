@@ -459,6 +459,19 @@ namespace GsPlugin.Services {
         /// <summary>
         /// Maps a Playnite Game to the API DTO. Shared by all sync paths.
         /// </summary>
+        /// <summary>
+        /// Safely extracts names from a Playnite collection, filtering out null entries.
+        /// Returns null for empty or null collections.
+        /// </summary>
+        private static List<string> SafeNames<T>(IEnumerable<T> items) where T : Playnite.SDK.Models.DatabaseObject {
+            if (items == null) return null;
+            var list = new List<string>();
+            foreach (var item in items) {
+                if (item?.Name != null) list.Add(item.Name);
+            }
+            return list.Count > 0 ? list : null;
+        }
+
         private GameSyncDto MapGameToDto(Playnite.SDK.Models.Game g, bool syncAchievements) {
             var achievementCounts = syncAchievements
                 ? _achievementHelper.GetCounts(g.Id)
@@ -479,30 +492,14 @@ namespace GsPlugin.Services {
                 completion_status_name = g.CompletionStatus?.Name,
                 achievement_count_unlocked = achievementCounts?.unlocked,
                 achievement_count_total = achievementCounts?.total,
-                genres = g.Genres != null && g.Genres.Count > 0
-                    ? g.Genres.Select(x => x.Name).ToList()
-                    : null,
-                platforms = g.Platforms != null && g.Platforms.Count > 0
-                    ? g.Platforms.Select(x => x.Name).ToList()
-                    : null,
-                developers = g.Developers != null && g.Developers.Count > 0
-                    ? g.Developers.Select(x => x.Name).ToList()
-                    : null,
-                publishers = g.Publishers != null && g.Publishers.Count > 0
-                    ? g.Publishers.Select(x => x.Name).ToList()
-                    : null,
-                tags = g.Tags != null && g.Tags.Count > 0
-                    ? g.Tags.Select(x => x.Name).ToList()
-                    : null,
-                features = g.Features != null && g.Features.Count > 0
-                    ? g.Features.Select(x => x.Name).ToList()
-                    : null,
-                categories = g.Categories != null && g.Categories.Count > 0
-                    ? g.Categories.Select(x => x.Name).ToList()
-                    : null,
-                series = g.Series != null && g.Series.Count > 0
-                    ? g.Series.Select(x => x.Name).ToList()
-                    : null,
+                genres = SafeNames(g.Genres),
+                platforms = SafeNames(g.Platforms),
+                developers = SafeNames(g.Developers),
+                publishers = SafeNames(g.Publishers),
+                tags = SafeNames(g.Tags),
+                features = SafeNames(g.Features),
+                categories = SafeNames(g.Categories),
+                series = SafeNames(g.Series),
                 user_score = g.UserScore,
                 critic_score = g.CriticScore,
                 community_score = g.CommunityScore,
@@ -513,12 +510,8 @@ namespace GsPlugin.Services {
                 source_name = g.Source?.Name,
                 release_date = BuildReleaseDateString(g.ReleaseDate),
                 modified = g.Modified,
-                age_ratings = g.AgeRatings != null && g.AgeRatings.Count > 0
-                    ? g.AgeRatings.Select(x => x.Name).ToList()
-                    : null,
-                regions = g.Regions != null && g.Regions.Count > 0
-                    ? g.Regions.Select(x => x.Name).ToList()
-                    : null
+                age_ratings = SafeNames(g.AgeRatings),
+                regions = SafeNames(g.Regions)
             };
         }
 
@@ -685,7 +678,16 @@ namespace GsPlugin.Services {
         /// </summary>
         private async Task<(List<GameSyncDto> library, string libraryHash, int totalCount, int filteredCount)>
             BuildLibraryDtosAsync(IEnumerable<Playnite.SDK.Models.Game> playniteDatabaseGames) {
-            var allGames = playniteDatabaseGames.ToList();
+            // Snapshot the live Playnite collection to avoid "Collection was modified" if Playnite
+            // updates its database concurrently (e.g. metadata download or library import).
+            List<Playnite.SDK.Models.Game> allGames;
+            try {
+                allGames = playniteDatabaseGames.ToList();
+            }
+            catch (InvalidOperationException ex) {
+                _logger.Warn(ex, "Database collection modified during snapshot — retrying once");
+                allGames = playniteDatabaseGames.ToList();
+            }
             var syncAchievements = GsDataManager.Data.SyncAchievements;
 
             var (library, libraryHash, filteredCount) = await Task.Run(() => {
@@ -947,7 +949,13 @@ namespace GsPlugin.Services {
                 }
 
                 _logger.Info("Starting full achievements sync (v2)");
-                var allGames = playniteDatabaseGames.ToList();
+                List<Playnite.SDK.Models.Game> allGames;
+                try {
+                    allGames = playniteDatabaseGames.ToList();
+                }
+                catch (InvalidOperationException) {
+                    allGames = playniteDatabaseGames.ToList();
+                }
 
                 var games = await Task.Run(() => {
                     return allGames
@@ -1050,7 +1058,13 @@ namespace GsPlugin.Services {
                 }
 
                 _logger.Info("Starting diff achievements sync (v2)");
-                var allGames = playniteDatabaseGames.ToList();
+                List<Playnite.SDK.Models.Game> allGames;
+                try {
+                    allGames = playniteDatabaseGames.ToList();
+                }
+                catch (InvalidOperationException) {
+                    allGames = playniteDatabaseGames.ToList();
+                }
                 var achievementSnapshot = GsSnapshotManager.GetAchievementsSnapshot();
 
                 var (changed, clearedIds) = await Task.Run(() => {

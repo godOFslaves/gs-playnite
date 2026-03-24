@@ -95,6 +95,11 @@ namespace GsPlugin.Services {
                 GsLogger.Warn($"[GsSuccessStoryHelper] Achievement details lookup failed for game {gameId}: {ex.InnerException?.Message ?? ex.Message}");
                 return null;
             }
+            catch (InvalidOperationException ex) {
+                // Catches Newtonsoft.Json JValue access errors from Playnite SDK internals
+                GsLogger.Warn($"[GsSuccessStoryHelper] JValue/InvalidOp in GetAchievements for game {gameId}: {ex.Message}");
+                return null;
+            }
             catch (Exception ex) {
                 GsLogger.Warn(
                     $"[GsSuccessStoryHelper] Achievement details lookup failed for game {gameId}: {ex.Message}"
@@ -143,6 +148,10 @@ namespace GsPlugin.Services {
                     category: "achievement",
                     level: BreadcrumbLevel.Warning);
                 GsLogger.Warn($"[GsSuccessStoryHelper] Achievement lookup failed for game {gameId}: {ex.InnerException?.Message ?? ex.Message}");
+                return null;
+            }
+            catch (InvalidOperationException ex) {
+                GsLogger.Warn($"[GsSuccessStoryHelper] JValue/InvalidOp in GetCounts for game {gameId}: {ex.Message}");
                 return null;
             }
             catch (Exception ex) {
