@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.3](https://github.com/game-scrobbler/gs-playnite/compare/GsPlugin-v2.3.2...GsPlugin-v2.3.3) (2026-03-24)
+
+
+### Bug Fixes
+
+* inherit Playnite theme TextBox style to fix non-editable token input ([c5cbf67](https://github.com/game-scrobbler/gs-playnite/commit/c5cbf6747e5abefae1ed4563477da3676a6a499d))
+
 ## [2.3.2](https://github.com/game-scrobbler/gs-playnite/compare/GsPlugin-v2.3.1...GsPlugin-v2.3.2) (2026-03-24)
 
 
