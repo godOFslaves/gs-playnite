@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/game-scrobbler/gs-playnite/compare/GsPlugin-v2.3.0...GsPlugin-v2.3.1) (2026-03-24)
+
+
+### Bug Fixes
+
+* address high-priority Sentry errors and fix CI for windows-2022 ([bbf3e51](https://github.com/game-scrobbler/gs-playnite/commit/bbf3e51d462bb55143a78147e4f5489fb88c4889))
+
 ## [2.3.0](https://github.com/game-scrobbler/gs-playnite/compare/GsPlugin-v2.2.0...GsPlugin-v2.3.0) (2026-03-21)
 
 
