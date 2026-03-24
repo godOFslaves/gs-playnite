@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.2](https://github.com/game-scrobbler/gs-playnite/compare/GsPlugin-v2.3.1...GsPlugin-v2.3.2) (2026-03-24)
+
+
+### Bug Fixes
+
+* parse verify error responses instead of treating 400 as network error ([02646ad](https://github.com/game-scrobbler/gs-playnite/commit/02646ad34748ea113b26a856bd82aeaf021e8823))
+
 ## [2.3.1](https://github.com/game-scrobbler/gs-playnite/compare/GsPlugin-v2.3.0...GsPlugin-v2.3.1) (2026-03-24)
 
 
