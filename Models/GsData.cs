@@ -101,6 +101,12 @@ namespace GsPlugin.Models {
         /// </summary>
         public List<string> ShownNotificationIds { get; set; } = new List<string>();
 
+        /// <summary>
+        /// Number of scrobbles permanently dropped due to repeated flush failures.
+        /// Displayed in the settings diagnostics section. Reset on successful flush or manual sync.
+        /// </summary>
+        public int DroppedScrobbleCount { get; set; } = 0;
+
         public void UpdateFlags(bool disableSentry, bool disableScrobbling, bool disablePostHog = false) {
             // Build a new list and swap atomically to avoid IndexOutOfRangeException
             // when concurrent readers iterate via Flags.Contains() without a lock.
@@ -228,6 +234,19 @@ namespace GsPlugin.Models {
         /// Must be called under _lock.
         /// </summary>
         private static GsData Load() {
+            // Recover from a crash between WriteAllText and File.Replace:
+            // the .tmp file contains the most recent successful write.
+            var tempPath = _filePath + ".tmp";
+            if (!File.Exists(_filePath) && File.Exists(tempPath)) {
+                try {
+                    File.Move(tempPath, _filePath);
+                    GsLogger.Info("Recovered gs_data.json from .tmp file");
+                }
+                catch (Exception ex) {
+                    GsLogger.Warn($"Failed to recover .tmp file: {ex.Message}");
+                }
+            }
+
             if (!File.Exists(_filePath)) {
                 return new GsData();
             }
@@ -276,7 +295,14 @@ namespace GsPlugin.Models {
                 }
                 var json = JsonSerializer.Serialize(_data, jsonOptions);
                 GsLogger.Info("Saving plugin data to disk");
-                File.WriteAllText(_filePath, json);
+                var tempPath = _filePath + ".tmp";
+                File.WriteAllText(tempPath, json);
+                if (File.Exists(_filePath)) {
+                    File.Replace(tempPath, _filePath, destinationBackupFileName: null);
+                }
+                else {
+                    File.Move(tempPath, _filePath);
+                }
             }
             catch (Exception ex) {
                 GsLogger.Error("Failed to save custom GsData", ex);

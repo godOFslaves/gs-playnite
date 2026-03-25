@@ -80,6 +80,18 @@ namespace GsPlugin.Models {
         }
 
         private static GsSnapshot Load() {
+            // Recover from a crash between WriteAllText and File.Replace
+            var tempPath = _filePath + ".tmp";
+            if (!File.Exists(_filePath) && File.Exists(tempPath)) {
+                try {
+                    File.Move(tempPath, _filePath);
+                    GsLogger.Info("[GsSnapshotManager] Recovered snapshot from .tmp file");
+                }
+                catch (Exception ex) {
+                    GsLogger.Warn($"[GsSnapshotManager] Failed to recover .tmp file: {ex.Message}");
+                }
+            }
+
             if (!File.Exists(_filePath)) {
                 return new GsSnapshot();
             }
@@ -127,7 +139,14 @@ namespace GsPlugin.Models {
             }
             try {
                 var json = JsonSerializer.Serialize(_snapshot, jsonOptions);
-                File.WriteAllText(_filePath, json);
+                var tempPath = _filePath + ".tmp";
+                File.WriteAllText(tempPath, json);
+                if (File.Exists(_filePath)) {
+                    File.Replace(tempPath, _filePath, destinationBackupFileName: null);
+                }
+                else {
+                    File.Move(tempPath, _filePath);
+                }
             }
             catch (Exception ex) {
                 GsLogger.Warn($"[GsSnapshotManager] Failed to save snapshot: {ex.Message}");
