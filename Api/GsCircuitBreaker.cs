@@ -57,8 +57,12 @@ namespace GsPlugin.Api {
         /// <param name="func">Function to execute</param>
         /// <param name="maxRetries">Maximum number of retries (default: 3)</param>
         /// <param name="baseDelay">Base delay for exponential backoff (default: 1 second)</param>
+        /// <param name="isFailure">Optional predicate to treat a non-throwing result as a failure
+        /// (e.g. null return from an HTTP call that swallows errors). When supplied, matching
+        /// results count toward the failure threshold and trigger retries.</param>
         /// <returns>Result of the function or default(T) if all attempts fail</returns>
-        public async Task<T> ExecuteAsync<T>(Func<Task<T>> func, int maxRetries = 3, TimeSpan? baseDelay = null) {
+        public async Task<T> ExecuteAsync<T>(Func<Task<T>> func, int maxRetries = 3,
+            TimeSpan? baseDelay = null, Func<T, bool> isFailure = null) {
             var delay = baseDelay ?? TimeSpan.FromSeconds(1);
 
             for (int attempt = 0; attempt <= maxRetries; attempt++) {
@@ -70,6 +74,22 @@ namespace GsPlugin.Api {
                     }
 
                     var result = await func();
+
+                    // If the caller supplied a failure predicate and the result indicates failure,
+                    // treat it the same as a thrown exception for circuit breaker purposes.
+                    if (isFailure != null && isFailure(result)) {
+                        _logger.Warn($"API call attempt {attempt + 1} returned a failure result");
+                        OnFailure();
+
+                        if (attempt == maxRetries) {
+                            _logger.Warn($"All {maxRetries + 1} attempts returned failure results, giving up");
+                            return result;
+                        }
+
+                        await WaitWithBackoffAsync(delay, attempt);
+                        continue;
+                    }
+
                     OnSuccess();
                     return result;
                 }
@@ -83,20 +103,25 @@ namespace GsPlugin.Api {
                         throw;
                     }
 
-                    // Exponential backoff: delay = baseDelay * 2^attempt with some jitter
-                    int jitter;
-                    lock (_lock) {
-                        jitter = _random.Next(0, 1000); // Add jitter up to 1 second
-                    }
-                    var waitTime = TimeSpan.FromMilliseconds(
-                        delay.TotalMilliseconds * Math.Pow(2, attempt) + jitter);
-
-                    _logger.Info($"Waiting {waitTime.TotalSeconds:F1} seconds before retry attempt {attempt + 2}");
-                    await Task.Delay(waitTime);
+                    await WaitWithBackoffAsync(delay, attempt);
                 }
             }
 
             return default(T);
+        }
+
+        /// <summary>
+        /// Exponential backoff with jitter: delay = baseDelay * 2^attempt + random(0-1000ms).
+        /// </summary>
+        private async Task WaitWithBackoffAsync(TimeSpan baseDelay, int attempt) {
+            int jitter;
+            lock (_lock) {
+                jitter = _random.Next(0, 1000);
+            }
+            var waitTime = TimeSpan.FromMilliseconds(
+                baseDelay.TotalMilliseconds * Math.Pow(2, attempt) + jitter);
+            _logger.Info($"Waiting {waitTime.TotalSeconds:F1} seconds before retry attempt {attempt + 2}");
+            await Task.Delay(waitTime);
         }
 
         /// <summary>

@@ -336,6 +336,113 @@ namespace GsPlugin.Tests {
             Assert.Equal(1, firedCount); // fired exactly once
         }
 
+        #region Failure Predicate Tests
+
+        [Fact]
+        public async Task NullResult_WithPredicate_OpensCircuitAfterThreshold() {
+            var breaker = new GsCircuitBreaker(failureThreshold: 2, retryDelay: TimeSpan.FromMilliseconds(1));
+
+            // Each call returns null and uses maxRetries: 0 so a single null counts as one failure.
+            for (int i = 0; i < 2; i++) {
+                var result = await breaker.ExecuteAsync<string>(async () => {
+                    await Task.CompletedTask;
+                    return null;
+                }, maxRetries: 0, isFailure: r => r == null);
+
+                Assert.Null(result);
+            }
+
+            Assert.Equal(GsCircuitBreaker.CircuitState.Open, breaker.State);
+        }
+
+        [Fact]
+        public async Task NullResult_WithPredicate_TriggersRetries() {
+            var breaker = new GsCircuitBreaker(failureThreshold: 10);
+            int attempts = 0;
+
+            var result = await breaker.ExecuteAsync<string>(async () => {
+                attempts++;
+                await Task.CompletedTask;
+                return null;
+            }, maxRetries: 2, baseDelay: TimeSpan.FromMilliseconds(1), isFailure: r => r == null);
+
+            // Should have attempted 3 times (initial + 2 retries)
+            Assert.Equal(3, attempts);
+            Assert.Null(result);
+        }
+
+        [Fact]
+        public async Task NullResult_WithPredicate_ReturnsNullOnLastAttempt_NoThrow() {
+            var breaker = new GsCircuitBreaker(failureThreshold: 10);
+
+            // Must not throw — should return the null result gracefully
+            var result = await breaker.ExecuteAsync<string>(async () => {
+                await Task.CompletedTask;
+                return null;
+            }, maxRetries: 1, baseDelay: TimeSpan.FromMilliseconds(1), isFailure: r => r == null);
+
+            Assert.Null(result);
+        }
+
+        [Fact]
+        public async Task NullResult_WithoutPredicate_TreatedAsSuccess() {
+            var breaker = new GsCircuitBreaker(failureThreshold: 1);
+
+            // Without isFailure, null is treated as a normal success — circuit stays closed
+            var result = await breaker.ExecuteAsync<string>(async () => {
+                await Task.CompletedTask;
+                return null;
+            }, maxRetries: 0);
+
+            Assert.Null(result);
+            Assert.Equal(GsCircuitBreaker.CircuitState.Closed, breaker.State);
+        }
+
+        [Fact]
+        public async Task SuccessOnRetry_WithPredicate() {
+            var breaker = new GsCircuitBreaker(failureThreshold: 10);
+            int attempts = 0;
+
+            var result = await breaker.ExecuteAsync<string>(async () => {
+                attempts++;
+                await Task.CompletedTask;
+                return attempts < 3 ? null : "ok";
+            }, maxRetries: 3, baseDelay: TimeSpan.FromMilliseconds(1), isFailure: r => r == null);
+
+            Assert.Equal("ok", result);
+            Assert.Equal(3, attempts);
+            Assert.Equal(GsCircuitBreaker.CircuitState.Closed, breaker.State);
+        }
+
+        [Fact]
+        public async Task HalfOpen_NullResult_WithPredicate_ReopensCircuit() {
+            var timeout = TimeSpan.FromMilliseconds(50);
+            var breaker = new GsCircuitBreaker(failureThreshold: 1, timeout: timeout, retryDelay: TimeSpan.FromMilliseconds(1));
+
+            // Open the circuit with a thrown exception
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                breaker.ExecuteAsync<string>(async () => {
+                    await Task.CompletedTask;
+                    throw new InvalidOperationException("fail");
+                }, maxRetries: 0));
+
+            Assert.Equal(GsCircuitBreaker.CircuitState.Open, breaker.State);
+
+            // Wait for timeout to allow HalfOpen
+            await Task.Delay(100);
+
+            // Null result during HalfOpen should reopen the circuit
+            var result = await breaker.ExecuteAsync<string>(async () => {
+                await Task.CompletedTask;
+                return null;
+            }, maxRetries: 0, isFailure: r => r == null);
+
+            Assert.Null(result);
+            Assert.Equal(GsCircuitBreaker.CircuitState.Open, breaker.State);
+        }
+
+        #endregion
+
         [Fact]
         public async Task OnCircuitClosed_NotFiredOnNormalClosedSuccess() {
             var breaker = new GsCircuitBreaker(failureThreshold: 5);

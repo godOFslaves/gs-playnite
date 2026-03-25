@@ -92,7 +92,7 @@ namespace GsPlugin.Api {
 
             var asyncResponse = await _circuitBreaker.ExecuteAsync(async () => {
                 return await PostJsonAsync<AsyncQueuedResponse>(url, startData);
-            }, maxRetries: 2);
+            }, maxRetries: 2, isFailure: r => r == null);
 
             if (asyncResponse != null && asyncResponse.success && asyncResponse.status == "queued") {
                 _logger.Info($"Scrobble start queued with ID: {asyncResponse.queueId}");
@@ -127,7 +127,7 @@ namespace GsPlugin.Api {
 
             var asyncResponse = await _circuitBreaker.ExecuteAsync(async () => {
                 return await PostJsonAsync<AsyncQueuedResponse>(url, endData, true);
-            }, maxRetries: 2);
+            }, maxRetries: 2, isFailure: r => r == null);
 
             if (asyncResponse != null && asyncResponse.success && asyncResponse.status == "queued") {
                 _logger.Info($"Scrobble finish queued with ID: {asyncResponse.queueId}");
@@ -209,6 +209,14 @@ namespace GsPlugin.Api {
                         if (item.FlushAttempts >= MaxFlushAttempts) {
                             _logger.Warn($"Dropping pending scrobble after {item.FlushAttempts} failed flush attempts (type={item.Type}, queued={item.QueuedAt:O})");
                             GsDataManager.RemovePendingScrobble(item);
+                            GsDataManager.MutateAndSave(d => d.DroppedScrobbleCount++);
+                            GsSentry.AddBreadcrumb(
+                                message: $"Dropped pending scrobble after {MaxFlushAttempts} attempts",
+                                category: "flush",
+                                data: new System.Collections.Generic.Dictionary<string, string> {
+                                    { "type", item.Type },
+                                    { "queued_at", item.QueuedAt.ToString("O") }
+                                });
                         }
                         else {
                             // Item stays in the queue with its incremented FlushAttempts counter.
@@ -240,7 +248,7 @@ namespace GsPlugin.Api {
             string url = $"{_apiBaseUrl}/api/playnite/v2/library/sync-full";
             return await _circuitBreaker.ExecuteAsync(async () => {
                 return await PostJsonAsync<AsyncQueuedResponse>(url, req, true);
-            }, maxRetries: 1);
+            }, maxRetries: 1, isFailure: r => r == null);
         }
 
         public async Task<AsyncQueuedResponse> SyncLibraryDiff(LibraryDiffSyncReq req) {
@@ -256,7 +264,7 @@ namespace GsPlugin.Api {
             string url = $"{_apiBaseUrl}/api/playnite/v2/library/sync-diff";
             return await _circuitBreaker.ExecuteAsync(async () => {
                 return await PostJsonAsync<AsyncQueuedResponse>(url, req, true);
-            }, maxRetries: 1);
+            }, maxRetries: 1, isFailure: r => r == null);
         }
 
         public async Task<AsyncQueuedResponse> SyncAchievementsFull(AchievementsFullSyncReq req) {
@@ -272,7 +280,7 @@ namespace GsPlugin.Api {
             string url = $"{_apiBaseUrl}/api/playnite/v2/achievements/sync-full";
             return await _circuitBreaker.ExecuteAsync(async () => {
                 return await PostJsonAsync<AsyncQueuedResponse>(url, req, true);
-            }, maxRetries: 1);
+            }, maxRetries: 1, isFailure: r => r == null);
         }
 
         public async Task<AsyncQueuedResponse> SyncAchievementsDiff(AchievementsDiffSyncReq req) {
@@ -288,7 +296,7 @@ namespace GsPlugin.Api {
             string url = $"{_apiBaseUrl}/api/playnite/v2/achievements/sync-diff";
             return await _circuitBreaker.ExecuteAsync(async () => {
                 return await PostJsonAsync<AsyncQueuedResponse>(url, req, true);
-            }, maxRetries: 1);
+            }, maxRetries: 1, isFailure: r => r == null);
         }
 
         #endregion
@@ -471,7 +479,7 @@ namespace GsPlugin.Api {
         public async Task<AllowedPluginsRes> GetAllowedPlugins() {
             return await _circuitBreaker.ExecuteAsync(async () => {
                 return await GetJsonAsync<AllowedPluginsRes>($"{_apiBaseUrl}/api/playnite/v2/allowed-plugins");
-            }, maxRetries: 1);
+            }, maxRetries: 1, isFailure: r => r == null);
         }
 
         #endregion
