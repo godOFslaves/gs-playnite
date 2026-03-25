@@ -196,6 +196,10 @@ namespace GsPlugin.Models {
         /// <summary>True when there is at least one pending scrobble.</summary>
         public static bool HasPendingScrobbles => PendingScrobbleCount > 0;
 
+        /// <summary>Number of scrobbles permanently lost due to repeated server failures.</summary>
+        public static int DroppedScrobbleCount =>
+            GsDataManager.DataOrNull?.DroppedScrobbleCount ?? 0;
+
         public static string LastSyncStatus {
             get {
                 var syncAt = GsDataManager.Data.LastSyncAt;

@@ -411,6 +411,28 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Dropped scrobbles indicator — only visible when scrobbles were lost -->
+                    <Border x:Name="DroppedScrobblesBorder"
+                            Background="{DynamicResource TextBoxBackgroundBrush}"
+                            BorderBrush="#E53935"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="10,6"
+                            Margin="0,4,0,0"
+                            Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#9888;"
+                                       Foreground="#E53935"
+                                       FontSize="12"
+                                       Margin="0,0,6,0"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock x:Name="DroppedScrobblesTextBlock"
+                                       FontSize="11"
+                                       Foreground="#E53935"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
                 </StackPanel>
             </Border>
 

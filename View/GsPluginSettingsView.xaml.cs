@@ -98,11 +98,20 @@ namespace GsPlugin.View {
         private void UpdatePendingScrobblesStatus() {
             int count = GsPluginSettingsViewModel.PendingScrobbleCount;
             if (count > 0) {
-                PendingScrobblesTextBlock.Text = $"{count} scrobble{(count == 1 ? "" : "s")} queued — will retry automatically";
+                PendingScrobblesTextBlock.Text = $"{count} scrobble{(count == 1 ? "" : "s")} queued \u2014 will retry automatically";
                 PendingScrobblesBorder.Visibility = Visibility.Visible;
             }
             else {
                 PendingScrobblesBorder.Visibility = Visibility.Collapsed;
+            }
+
+            int dropped = GsPluginSettingsViewModel.DroppedScrobbleCount;
+            if (dropped > 0) {
+                DroppedScrobblesTextBlock.Text = $"{dropped} scrobble{(dropped == 1 ? "" : "s")} lost due to server errors";
+                DroppedScrobblesBorder.Visibility = Visibility.Visible;
+            }
+            else {
+                DroppedScrobblesBorder.Visibility = Visibility.Collapsed;
             }
         }
 

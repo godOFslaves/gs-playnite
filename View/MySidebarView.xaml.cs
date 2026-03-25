@@ -71,9 +71,12 @@ namespace GsPlugin.View {
                     var uri = new Uri(args.Uri);
                     if (uri.Host != "gamescrobbler.com" && !uri.Host.EndsWith(".gamescrobbler.com")) {
                         args.Cancel = true;
-                        // Only open https links in the system browser
-                        if (uri.Scheme == "https") {
+                        // Only open trusted https links in the system browser
+                        if (uri.Scheme == "https" && GsPlayniteHelper.IsTrustedUrl(args.Uri)) {
                             Process.Start(new ProcessStartInfo(args.Uri) { UseShellExecute = true });
+                        }
+                        else if (uri.Scheme == "https") {
+                            GsLogger.Warn($"Blocked untrusted external URL: {uri.Host}");
                         }
                     }
                 }
@@ -87,9 +90,12 @@ namespace GsPlugin.View {
             args.Handled = true;
             try {
                 var uri = new Uri(args.Uri);
-                // Only open https links in the system browser
-                if (uri.Scheme == "https") {
+                // Only open trusted https links in the system browser
+                if (uri.Scheme == "https" && GsPlayniteHelper.IsTrustedUrl(args.Uri)) {
                     Process.Start(new ProcessStartInfo(args.Uri) { UseShellExecute = true });
+                }
+                else if (uri.Scheme == "https") {
+                    GsLogger.Warn($"Blocked untrusted new-window URL: {uri.Host}");
                 }
             }
             catch (Exception ex) {
