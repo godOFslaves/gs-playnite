@@ -1,17 +1,18 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
 using System.Linq;
-using System.Reflection;
+using System.Text.Json;
 using Playnite.SDK;
 using Playnite.SDK.Plugins;
 using GsPlugin.Infrastructure;
-using Sentry;
 
 namespace GsPlugin.Services {
     /// <summary>
-    /// Retrieves per-game achievement data from the SuccessStory plugin via reflection.
-    /// All methods return null if SuccessStory is not installed or an error occurs.
+    /// Retrieves per-game achievement data from SuccessStory by reading its on-disk JSON files.
+    /// Each game's achievements are stored in {ExtensionsDataPath}/{PluginGuid}/SuccessStory/{GameId}.json.
+    /// All methods return null if SuccessStory is not installed or the game has no data.
     /// </summary>
     public class GsSuccessStoryHelper : IAchievementProvider {
         private static readonly Guid SuccessStoryId = new Guid(
@@ -19,191 +20,129 @@ namespace GsPlugin.Services {
         );
 
         private readonly IPlayniteAPI _api;
-        private Plugin _cachedPlugin;
-        private bool _pluginSearched;
-
-        // Cached reflection members — resolved once per plugin lifetime, not per game.
-        private PropertyInfo _dbPropInfo;
-        private MethodInfo _getMethodInfo;
-        private object _cachedDb;
-        private bool _reflectionResolved;
+        private readonly string _dataPath;
 
         public GsSuccessStoryHelper(IPlayniteAPI api) {
             _api = api;
+            _dataPath = ResolveDataPath(api.Paths.ExtensionsDataPath);
+        }
+
+        internal GsSuccessStoryHelper(string dataPathOverride) {
+            _api = null;
+            _dataPath = dataPathOverride;
         }
 
         public string ProviderName => "SuccessStory";
 
-        public (int unlocked, int total)? GetCounts(Guid gameId) => GetAchievementCounts(gameId);
+        public bool IsInstalled {
+            get {
+                if (_dataPath != null && Directory.Exists(_dataPath)) return true;
+                return _api?.Addons?.Plugins?.Any(p => p.Id == SuccessStoryId) == true;
+            }
+        }
 
-        public int? GetUnlockedCount(Guid gameId) => GetAchievementCounts(gameId)?.unlocked;
+        public (int unlocked, int total)? GetCounts(Guid gameId) {
+            var achievements = GetAchievements(gameId);
+            if (achievements == null || achievements.Count == 0) return null;
+            return (achievements.Count(a => a.IsUnlocked), achievements.Count);
+        }
 
-        public int? GetTotalCount(Guid gameId) => GetAchievementCounts(gameId)?.total;
+        public int? GetUnlockedCount(Guid gameId) => GetCounts(gameId)?.unlocked;
 
-        public bool IsInstalled => GetSuccessStoryPlugin() != null;
+        public int? GetTotalCount(Guid gameId) => GetCounts(gameId)?.total;
 
-        /// <summary>
-        /// Returns per-achievement details for a game, or null if SuccessStory is absent or the game has no data.
-        /// </summary>
         public List<AchievementItem> GetAchievements(Guid gameId) {
             try {
-                var db = ResolveDatabase();
-                if (db == null || _getMethodInfo == null) {
-                    return null;
+                if (_dataPath == null || !Directory.Exists(_dataPath)) return null;
+
+                var filePath = Path.Combine(_dataPath, $"{gameId}.json");
+                if (!File.Exists(filePath)) return null;
+
+                byte[] fileBytes;
+                using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
+                           FileShare.ReadWrite | FileShare.Delete)) {
+                    using (var ms = new MemoryStream()) {
+                        stream.CopyTo(ms);
+                        fileBytes = ms.ToArray();
+                    }
                 }
 
-                var ga = _getMethodInfo.Invoke(db, new object[] { gameId, true, false });
-                if (ga == null) {
-                    return null;
+                using (var doc = JsonDocument.Parse(fileBytes)) {
+                    var root = doc.RootElement;
+
+                    if (root.TryGetProperty("IsIgnored", out var ignored) && ignored.GetBoolean())
+                        return null;
+
+                    if (!root.TryGetProperty("Items", out var items) || items.ValueKind != JsonValueKind.Array)
+                        return null;
+
+                    var result = new List<AchievementItem>();
+                    foreach (var item in items.EnumerateArray()) {
+                        var name = item.TryGetProperty("Name", out var n) ? n.GetString() : null;
+                        var description = item.TryGetProperty("Description", out var d) ? d.GetString() : null;
+
+                        DateTime? dateUnlocked = null;
+                        if (item.TryGetProperty("DateUnlocked", out var du) && du.ValueKind != JsonValueKind.Null) {
+                            if (du.TryGetDateTime(out var parsed)
+                                && parsed > DateTime.MinValue && parsed.Year > 1) {
+                                dateUnlocked = parsed;
+                            }
+                        }
+
+                        float? rarityPercent = null;
+                        if (item.TryGetProperty("Percent", out var pct) && pct.ValueKind == JsonValueKind.Number) {
+                            rarityPercent = (float)pct.GetDouble();
+                        }
+
+                        bool isUnlocked = dateUnlocked.HasValue;
+
+                        result.Add(new AchievementItem {
+                            Name = name,
+                            Description = description,
+                            DateUnlocked = isUnlocked ? dateUnlocked : null,
+                            IsUnlocked = isUnlocked,
+                            RarityPercent = rarityPercent
+                        });
+                    }
+
+                    return result.Count > 0 ? result : null;
                 }
-
-                var gaType = ga.GetType();
-                var items = gaType.GetProperty("Items")?.GetValue(ga) as IEnumerable;
-                if (items == null) {
-                    return null;
-                }
-
-                var result = new List<AchievementItem>();
-                foreach (var item in items) {
-                    var itemType = item.GetType();
-                    var name = itemType.GetProperty("Name")?.GetValue(item) as string;
-                    var description = itemType.GetProperty("Description")?.GetValue(item) as string;
-                    var dateUnlocked = itemType.GetProperty("DateUnlocked")?.GetValue(item) as DateTime?;
-                    var percent = itemType.GetProperty("Percent")?.GetValue(item);
-
-                    // SuccessStory stores DateUnlocked as DateTime.MinValue (or default) for locked achievements
-                    bool isUnlocked = dateUnlocked.HasValue
-                        && dateUnlocked.Value > DateTime.MinValue
-                        && dateUnlocked.Value.Year > 1;
-
-                    result.Add(new AchievementItem {
-                        Name = name,
-                        Description = description,
-                        DateUnlocked = isUnlocked ? dateUnlocked : null,
-                        IsUnlocked = isUnlocked,
-                        RarityPercent = percent != null ? Convert.ToSingle(percent) : (float?)null
-                    });
-                }
-
-                return result.Count > 0 ? result : null;
             }
-            catch (TargetInvocationException ex) {
-                GsSentry.AddBreadcrumb(
-                    message: $"[GsSuccessStoryHelper] TargetInvocationException in GetAchievements for game {gameId}: {ex.InnerException?.Message ?? ex.Message}",
-                    category: "achievement",
-                    level: BreadcrumbLevel.Warning);
-                GsLogger.Warn($"[GsSuccessStoryHelper] Achievement details lookup failed for game {gameId}: {ex.InnerException?.Message ?? ex.Message}");
+            catch (JsonException ex) {
+                GsLogger.Warn($"[GsSuccessStoryHelper] JSON parse error for game {gameId}: {ex.Message}");
                 return null;
             }
-            catch (InvalidOperationException ex) {
-                // Catches Newtonsoft.Json JValue access errors from Playnite SDK internals
-                GsLogger.Warn($"[GsSuccessStoryHelper] JValue/InvalidOp in GetAchievements for game {gameId}: {ex.Message}");
+            catch (IOException ex) {
+                GsLogger.Warn($"[GsSuccessStoryHelper] File read error for game {gameId}: {ex.Message}");
                 return null;
             }
             catch (Exception ex) {
-                GsLogger.Warn(
-                    $"[GsSuccessStoryHelper] Achievement details lookup failed for game {gameId}: {ex.Message}"
-                );
+                GsLogger.Warn($"[GsSuccessStoryHelper] Achievement lookup failed for game {gameId}: {ex.Message}");
                 return null;
             }
         }
 
         public string GetVersion() {
             try {
-                var plugin = GetSuccessStoryPlugin();
-                if (plugin == null)
-                    return null;
-                return plugin.GetType().Assembly.GetName().Version?.ToString(3);
+                var plugin = _api?.Addons?.Plugins?.FirstOrDefault(p => p.Id == SuccessStoryId);
+                if (plugin == null) return null;
+                return PluginVersionHelper.GetExtensionYamlVersion(plugin)
+                    ?? plugin.GetType().Assembly.GetName().Version?.ToString(3);
             }
             catch (Exception ex) {
-                GsLogger.Warn(
-                    $"[GsSuccessStoryHelper] Version lookup failed: {ex.Message}"
-                );
+                GsLogger.Warn($"[GsSuccessStoryHelper] Version lookup failed: {ex.Message}");
                 return null;
             }
         }
 
-        private (int unlocked, int total)? GetAchievementCounts(Guid gameId) {
-            try {
-                var db = ResolveDatabase();
-                if (db == null || _getMethodInfo == null) {
-                    return null;
-                }
+        private static string ResolveDataPath(string extensionsDataPath) {
+            if (string.IsNullOrEmpty(extensionsDataPath)) return null;
 
-                var ga = _getMethodInfo.Invoke(db, new object[] { gameId, true, false });
-                if (ga == null) {
-                    return null;
-                }
+            // SuccessStory stores data under {pluginGuid}/SuccessStory/{gameId}.json
+            var path = Path.Combine(extensionsDataPath, SuccessStoryId.ToString(), "SuccessStory");
+            if (Directory.Exists(path)) return path;
 
-                var gaType = ga.GetType();
-                var unlocked = (int?)gaType.GetProperty("Unlocked")?.GetValue(ga) ?? 0;
-                var items = gaType.GetProperty("Items")?.GetValue(ga) as ICollection;
-                var total = items?.Count ?? 0;
-                return total > 0 ? (unlocked, total) : ((int, int)?)null;
-            }
-            catch (TargetInvocationException ex) {
-                // Reflection call succeeded but the method threw — likely an API change in SuccessStory.
-                GsSentry.AddBreadcrumb(
-                    message: $"[GsSuccessStoryHelper] TargetInvocationException in GetAchievementCounts for game {gameId}: {ex.InnerException?.Message ?? ex.Message}",
-                    category: "achievement",
-                    level: BreadcrumbLevel.Warning);
-                GsLogger.Warn($"[GsSuccessStoryHelper] Achievement lookup failed for game {gameId}: {ex.InnerException?.Message ?? ex.Message}");
-                return null;
-            }
-            catch (InvalidOperationException ex) {
-                GsLogger.Warn($"[GsSuccessStoryHelper] JValue/InvalidOp in GetCounts for game {gameId}: {ex.Message}");
-                return null;
-            }
-            catch (Exception ex) {
-                GsLogger.Warn(
-                    $"[GsSuccessStoryHelper] Achievement lookup failed for game {gameId}: {ex.Message}"
-                );
-                return null;
-            }
-        }
-
-        private Plugin GetSuccessStoryPlugin() {
-            if (_pluginSearched) {
-                return _cachedPlugin;
-            }
-
-            _pluginSearched = true;
-            _cachedPlugin = _api.Addons.Plugins.FirstOrDefault(p => p.Id == SuccessStoryId);
-            return _cachedPlugin;
-        }
-
-        /// <summary>
-        /// Resolves and caches PluginDatabase property and Get method via reflection.
-        /// Called once; subsequent calls return the cached members.
-        /// Returns the database object, or null if resolution fails.
-        /// </summary>
-        private object ResolveDatabase() {
-            if (_reflectionResolved) return _cachedDb;
-            _reflectionResolved = true;
-
-            var plugin = GetSuccessStoryPlugin();
-            if (plugin == null) {
-                GsLogger.Warn("[GsSuccessStoryHelper] SuccessStory plugin not found in loaded plugins.");
-                return null;
-            }
-
-            _dbPropInfo = plugin.GetType()
-                .GetProperty("PluginDatabase", BindingFlags.Public | BindingFlags.Instance);
-            _cachedDb = _dbPropInfo?.GetValue(plugin);
-            if (_cachedDb == null) {
-                GsLogger.Warn($"[GsSuccessStoryHelper] PluginDatabase property missing or null on {plugin.GetType().FullName}.");
-                return null;
-            }
-
-            _getMethodInfo = _cachedDb.GetType()
-                .GetMethod("Get", BindingFlags.Public | BindingFlags.Instance, null,
-                    new[] { typeof(Guid), typeof(bool), typeof(bool) }, null);
-            if (_getMethodInfo == null) {
-                GsLogger.Warn($"[GsSuccessStoryHelper] Get(Guid,bool,bool) method not found on {_cachedDb.GetType().FullName}. " +
-                    "SuccessStory API may have changed.");
-            }
-
-            return _cachedDb;
+            return path;
         }
     }
 }

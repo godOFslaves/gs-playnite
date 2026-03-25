@@ -18,6 +18,8 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="PlayniteSDK" Version="6.15.0" />
+    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119.0" />
     <PackageReference Include="System.Text.Json" Version="9.0.9" />
     <PackageReference Include="System.ValueTuple" Version="4.6.1" />
   </ItemGroup>

@@ -35,8 +35,8 @@ GsPlugin.cs              — Entry point (namespace: GsPlugin)
 │   ├── GsScrobblingService.cs       — Game session tracking and library/achievement sync
 │   ├── IAchievementProvider.cs      — Achievement provider interface
 │   ├── GsAchievementAggregator.cs   — Multi-provider achievement aggregation
-│   ├── GsSuccessStoryHelper.cs      — SuccessStory addon integration (reflection)
-│   ├── GsPlayniteAchievementsHelper.cs — Playnite Achievements addon integration (reflection)
+│   ├── GsSuccessStoryHelper.cs      — SuccessStory addon integration (direct JSON file reads)
+│   ├── GsPlayniteAchievementsHelper.cs — Playnite Achievements addon integration (direct SQLite reads)
 │   ├── GsAccountLinkingService.cs   — Account linking operations
 │   ├── GsNotificationService.cs      — Server notification fetch and display
 │   ├── GsUriHandler.cs              — Deep link processing
@@ -65,8 +65,8 @@ GsPlugin.cs              — Entry point (namespace: GsPlugin)
 ```
 GsPlugin (entry point, IDisposable)
 ├── GsScrobblingService → GsApiClient → GsCircuitBreaker
-│                       → GsAchievementAggregator → GsSuccessStoryHelper (reflection)
-│                       │                         → GsPlayniteAchievementsHelper (reflection)
+│                       → GsAchievementAggregator → GsSuccessStoryHelper (JSON file reads)
+│                       │                         → GsPlayniteAchievementsHelper (SQLite reads)
 │                       → GsSnapshotManager (diff-based sync state)
 ├── GsAccountLinkingService → GsApiClient
 ├── GsNotificationService → GsApiClient (fire-and-forget background)
@@ -122,10 +122,12 @@ GsPlugin (entry point, IDisposable)
 ### Achievement Provider Architecture
 Achievement data comes from two optional addons via an aggregator pattern:
 - `IAchievementProvider` — common interface (`GetCounts`, `GetAchievements`, `IsInstalled`)
-- `GsSuccessStoryHelper` — reads from SuccessStory addon via reflection (priority 1)
-- `GsPlayniteAchievementsHelper` — reads from Playnite Achievements addon via reflection (priority 2)
+- `GsSuccessStoryHelper` — reads SuccessStory's per-game JSON files from `{ExtensionsDataPath}/{pluginGuid}/SuccessStory/{gameId}.json` (priority 1)
+- `GsPlayniteAchievementsHelper` — reads Playnite Achievements' SQLite database at `{ExtensionsDataPath}/{pluginGuid}/achievement_cache.db` via `System.Data.SQLite` in read-only mode (priority 2)
 - `GsAchievementAggregator` — iterates providers in order; first with data wins. Skips `(0, 0)` results to allow fallback.
-- Both providers catch `TargetInvocationException` separately (reflection call succeeded but the addon method threw) with Sentry breadcrumbs for diagnostics.
+- `PluginVersionHelper` — reads version from `extension.yaml` next to the plugin DLL; shared by both providers for `GetVersion()`.
+- `IsInstalled` checks data directory/file existence on disk, not plugin presence in `_api.Addons.Plugins`.
+- `System.Data.SQLite.Core` NuGet package ships native `SQLite.Interop.dll` (x86/x64) via build targets.
 
 ### Settings UI & Localization
 - Settings view uses localized strings from `Localization/en_US.xaml` resource dictionary, organized into card-based sections.
@@ -134,7 +136,7 @@ Achievement data comes from two optional addons via an aggregator pattern:
 
 ### Test Project
 - **GsPlugin.Tests/** — xUnit test project (SDK-style .csproj, net462)
-- Test classes: `AchievementProviderTests`, `ApiResultTests`, `GsApiClientValidationTests`, `GsCircuitBreakerTests`, `GsDataManagerTests`, `GsDataTests`, `GsFlushAndPairingTests`, `GsMetadataHashTests`, `GsPluginSettingsViewModelTests`, `GsScrobblingServiceHashTests`, `GsSnapshotTests`, `GsTimeTests`, `LinkingResultTests`, `ValidateTokenTests`
+- Test classes: `AchievementProviderTests`, `ApiResultTests`, `GsApiClientValidationTests`, `GsCircuitBreakerTests`, `GsDataManagerTests`, `GsDataTests`, `GsFlushAndPairingTests`, `GsMetadataHashTests`, `GsPluginSettingsViewModelTests`, `GsScrobblingServiceHashTests`, `GsSnapshotTests`, `GsTimeTests`, `LinkingResultTests`, `PlayniteAchievementsSqliteTests`, `SuccessStoryFileReaderTests`, `ValidateTokenTests`
 - `GsDataManagerTests` and `GsDataTests` include coverage for install-token persistence, `IdentityGeneration`, `RotateInstallId()`, `SetInstallTokenIfActive()`, `InstallIdForBody`, opt-out token clearing, and `RecordShownNotifications()`/`GetShownNotificationIds()` thread-safe notification state.
 
 ## Build Environment
