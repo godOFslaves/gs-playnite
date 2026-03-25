@@ -38,15 +38,8 @@ namespace GsPlugin {
                 return null;
             };
 
-            // Prevent unobserved task exceptions from crashing the finalizer thread.
-            // Fire-and-forget tasks that throw without being awaited surface here.
-            TaskScheduler.UnobservedTaskException += (sender, e) => {
-                e.SetObserved();
-                try {
-                    _logger.Warn(e.Exception?.GetBaseException(), "Unobserved task exception (swallowed)");
-                }
-                catch { /* logging must not throw */ }
-            };
+            // UnobservedTaskException handling is centralized in GsSentry.Initialize()
+            // which filters by plugin origin, captures to Sentry, and calls SetObserved().
         }
         private GsPluginSettingsViewModel _settings { get; set; }
         private GsApiClient _apiClient;

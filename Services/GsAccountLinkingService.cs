@@ -116,18 +116,17 @@ namespace GsPlugin.Services {
                 }
 
                 if (response.success) {
-                    if (response.userId == GsData.NotLinkedValue) {
-                        GsDataManager.Data.LinkedUserId = null;
-                    }
-                    else if (string.IsNullOrWhiteSpace(response.userId) || response.userId.Length > 256) {
+                    if (response.userId != GsData.NotLinkedValue
+                        && (string.IsNullOrWhiteSpace(response.userId) || response.userId.Length > 256)) {
                         string errorMessage = "Invalid user ID format received from server";
                         GsLogger.Error($"{context} linking failed: {errorMessage}");
                         return LinkingResult.CreateError(errorMessage, context);
                     }
-                    else {
-                        GsDataManager.Data.LinkedUserId = response.userId;
-                    }
-                    GsDataManager.Save();
+                    GsDataManager.MutateAndSave(d => {
+                        d.LinkedUserId = response.userId == GsData.NotLinkedValue
+                            ? null
+                            : response.userId;
+                    });
                     // Notify listeners of status change
                     OnLinkingStatusChanged();
 

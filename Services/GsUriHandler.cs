@@ -99,31 +99,56 @@ namespace GsPlugin.Services {
         /// Processes automatic account linking using the provided token.
         /// </summary>
         /// <param name="token">The linking token from the web app</param>
-        private async Task ProcessAutomaticLinking(string token) {
-            try {
-                // Use the centralized linking service
-                var result = await _linkingService.LinkAccountAsync(token, LinkingContext.AutomaticUri);
+        private const int MaxLinkRetries = 3;
 
-                if (result.Success) {
-                    _playniteApi?.Dialogs?.ShowMessage($"Account successfully linked!\nUser ID: {result.UserId}", "Account Linking Success", MessageBoxButton.OK, MessageBoxImage.Information
-                    );
-                }
-                else if (result.IsNetworkError) {
-                    var retry = _playniteApi?.Dialogs?.ShowMessage(
-                        $"Account linking failed due to a network error:\n{result.ErrorMessage}\n\nWould you like to retry?",
-                        "Account Linking Failed — Retry?",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Warning);
-                    if (retry == MessageBoxResult.Yes) {
-                        await ProcessAutomaticLinking(token);
+        private async Task ProcessAutomaticLinking(string token) {
+            for (int attempt = 0; attempt < MaxLinkRetries; attempt++) {
+                try {
+                    var result = await _linkingService.LinkAccountAsync(token, LinkingContext.AutomaticUri);
+
+                    if (result.Success) {
+                        _playniteApi?.Dialogs?.ShowMessage(
+                            $"Account successfully linked!\nUser ID: {result.UserId}",
+                            "Account Linking Success",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+                        return;
+                    }
+
+                    if (result.IsNetworkError) {
+                        bool isLastAttempt = attempt == MaxLinkRetries - 1;
+                        if (isLastAttempt) {
+                            _playniteApi?.Dialogs?.ShowMessage(
+                                $"Account linking failed after multiple attempts:\n{result.ErrorMessage}\n\nPlease try again later.",
+                                "Account Linking Failed",
+                                MessageBoxButton.OK,
+                                MessageBoxImage.Error);
+                            return;
+                        }
+
+                        var retry = _playniteApi?.Dialogs?.ShowMessage(
+                            $"Account linking failed due to a network error:\n{result.ErrorMessage}\n\nWould you like to retry?",
+                            "Account Linking Failed \u2014 Retry?",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Warning);
+                        if (retry != MessageBoxResult.Yes) {
+                            return;
+                        }
+                        // Loop continues to next attempt
+                    }
+                    else {
+                        _playniteApi?.Dialogs?.ShowMessage(
+                            $"Account linking failed: {result.ErrorMessage}",
+                            "Account Linking Failed",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Error);
+                        return;
                     }
                 }
-                else {
-                    _playniteApi?.Dialogs?.ShowMessage($"Account linking failed: {result.ErrorMessage}", "Account Linking Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                catch (Exception ex) {
+                    HandleLinkingException(ex);
+                    return;
                 }
-            }
-            catch (Exception ex) {
-                HandleLinkingException(ex);
             }
         }
 
