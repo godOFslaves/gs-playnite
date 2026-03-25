@@ -10,11 +10,6 @@
       "prerelease": false,
       "extra-files": [
         {
-          "type": "xml",
-          "path": "GsPlugin.csproj",
-          "xpath": "//Project/PropertyGroup/Version"
-        },
-        {
           "type": "yaml",
           "path": "extension.yaml",
           "jsonpath": "$.Version",

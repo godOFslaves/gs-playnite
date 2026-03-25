@@ -18,21 +18,22 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Checkout powershell-yaml
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: cloudbase/powershell-yaml
+          ref: 9664752e6f0149fd95a769e5788e0c84f75bd99e # pin to immutable commit
           path: powershell-yaml
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '8.0.x'
 
       - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2
 
       - name: NuGet Restore
         run: nuget restore .\GsPlugin.sln
@@ -64,7 +65,7 @@ jobs:
       - name: Create GitHub Release
         if: github.ref == 'refs/heads/main'
         id: release
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@c3fc4de07084f75a2b61a5b933069bda6edf3d5c # v4
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
@@ -77,7 +78,7 @@ jobs:
           SENTRY_ORG: game-scrobbler
           SENTRY_PROJECT: gs-playnite
         run: |
-          npm install -g @sentry/cli
+          npm install -g @sentry/cli@2.42.2
           $version = "${{ steps.release.outputs.tag_name }}".TrimStart('v')
           sentry-cli releases new "GsPlugin@$version"
           sentry-cli releases set-commits "GsPlugin@$version" --auto
