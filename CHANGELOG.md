@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.4.0](https://github.com/game-scrobbler/gs-playnite/compare/GsPlugin-v2.3.3...GsPlugin-v2.4.0) (2026-03-25)
+
+
+### Features
+
+* add diagnostic logging for achievement provider resolution ([c97ee7c](https://github.com/game-scrobbler/gs-playnite/commit/c97ee7c55da2e3e04fd11902b3967664afb6431e))
+
+
+### Bug Fixes
+
+* enforce thread-safe mutations and bound retry recursion ([16b0a3a](https://github.com/game-scrobbler/gs-playnite/commit/16b0a3a879f35be1b76d0e4a923b479d41884d0a))
+* improve token expiry error with actionable guidance and downgrade Sentry level ([9f7924c](https://github.com/game-scrobbler/gs-playnite/commit/9f7924ca007086f31e32e0168ff9173b41f445ec))
+* make circuit breaker detect HTTP server errors ([cc654c5](https://github.com/game-scrobbler/gs-playnite/commit/cc654c545639c91bba1d4d7551bf981955796bab))
+* restrict WebView external URLs and surface dropped scrobbles ([c03b7cc](https://github.com/game-scrobbler/gs-playnite/commit/c03b7cc41f313887f2767382e8e0cd12a4587513))
+* use atomic file writes for persistent state ([c2eb8df](https://github.com/game-scrobbler/gs-playnite/commit/c2eb8df9c170c38b7979155d111405ab24db9ee6))
+
 ## [2.3.3](https://github.com/game-scrobbler/gs-playnite/compare/GsPlugin-v2.3.2...GsPlugin-v2.3.3) (2026-03-24)
 
 
