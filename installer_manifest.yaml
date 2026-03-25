@@ -1,6 +1,17 @@
 AddonId: 32975fed-6915-4dd3-a230-030cdc5265ae
 
 Packages:
+  - Version: 2.4.0
+    RequiredApiVersion: 6.12.0
+    ReleaseDate: 2026-03-25
+    PackageUrl: https://github.com/game-scrobbler/gs-playnite/releases/download/GsPlugin-v2.4.0/GsPlugin-v2.4.0.pext
+    Changelog:
+      - add diagnostic logging for achievement provider resolution
+      - enforce thread-safe mutations and bound retry recursion
+      - improve token expiry error with actionable guidance and downgrade Sentry level
+      - make circuit breaker detect HTTP server errors
+      - restrict WebView external URLs and surface dropped scrobbles
+      - use atomic file writes for persistent state
   - Version: 2.3.3
     RequiredApiVersion: 6.12.0
     ReleaseDate: 2026-03-24
