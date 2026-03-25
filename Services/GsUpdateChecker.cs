@@ -64,8 +64,7 @@ namespace GsPlugin.Services {
                     NotificationType.Info,
                     () => OpenAddonsDialog()));
 
-                GsDataManager.Data.LastNotifiedVersion = latestVersion;
-                GsDataManager.Save();
+                GsDataManager.MutateAndSave(d => d.LastNotifiedVersion = latestVersion);
 
                 GsLogger.Info($"Update notification shown: current={currentVersion}, latest={latestVersion}");
             }
@@ -75,44 +74,7 @@ namespace GsPlugin.Services {
         }
 
         private static void OpenAddonsDialog() {
-            try {
-                var appType = Type.GetType("Playnite.PlayniteApplication, Playnite");
-                if (appType == null) {
-                    return;
-                }
-
-                var currentProp = appType.GetProperty(
-                    "Current",
-                    BindingFlags.Public | BindingFlags.Static);
-                var playniteApp = currentProp?.GetValue(null);
-                if (playniteApp == null) {
-                    return;
-                }
-
-                var mainModelProp = appType.GetProperty(
-                    "MainModelBase",
-                    BindingFlags.Public | BindingFlags.Instance);
-                var mainModel = mainModelProp?.GetValue(playniteApp);
-                if (mainModel == null) {
-                    return;
-                }
-
-                var openAddonsCommandProp = mainModel
-                    .GetType()
-                    .GetProperty("OpenAddonsCommand", BindingFlags.Public | BindingFlags.Instance);
-                var command = openAddonsCommandProp?.GetValue(mainModel);
-                if (command == null) {
-                    return;
-                }
-
-                var executeMethod = command
-                    .GetType()
-                    .GetMethod("Execute", new[] { typeof(object) });
-                executeMethod?.Invoke(command, new object[] { null });
-            }
-            catch (Exception ex) {
-                GsLogger.Warn($"Failed to open Add-ons dialog via reflection: {ex.Message}");
-            }
+            GsPlayniteHelper.OpenAddonsDialog();
         }
 
         private static async Task<string> FetchLatestTagAsync() {
