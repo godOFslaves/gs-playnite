@@ -51,9 +51,11 @@ if ($changelogMatch.Success) {
     }
 }
 
-# Prepend marketing note as the first changelog entry
-$marketingNote = "Try our new Chat with your library and Timeline features on your GameScrobbler dashboard!"
-$changelogEntries = @($marketingNote) + $changelogEntries
+# Marketing note placeholder (leave empty to skip)
+$marketingNote = ""
+if ($marketingNote) {
+    $changelogEntries = @($marketingNote) + $changelogEntries
+}
 
 # If no changelog entries found, add a generic one
 if ($changelogEntries.Count -eq 0) {
