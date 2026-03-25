@@ -149,11 +149,18 @@ namespace GsPlugin.Services {
                     return LinkingResult.CreateSuccess(response.userId, context);
                 }
                 else {
-                    string errorMessage = response?.message ?? "Unknown error occurred during linking";
-                    GsLogger.Error($"{context} linking failed: {errorMessage}");
+                    string serverMessage = response?.message ?? "Unknown error occurred during linking";
+                    bool isTokenExpiry = serverMessage.IndexOf("expired", StringComparison.OrdinalIgnoreCase) >= 0
+                                      || serverMessage.IndexOf("invalid", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                    string errorMessage = isTokenExpiry
+                        ? $"{serverMessage} Visit gamescrobbler.com/app/control and click \"Add Platform\" to generate a new token."
+                        : serverMessage;
+
+                    GsLogger.Error($"{context} linking failed: {serverMessage}");
                     GsSentry.CaptureMessage(
-                        $"{context} account linking failed: {errorMessage}",
-                        SentryLevel.Warning
+                        $"{context} account linking failed: {serverMessage}",
+                        isTokenExpiry ? SentryLevel.Info : SentryLevel.Warning
                     );
                     return LinkingResult.CreateError(errorMessage, context);
                 }
