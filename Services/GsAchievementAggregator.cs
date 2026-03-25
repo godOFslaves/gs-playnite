@@ -48,6 +48,19 @@ namespace GsPlugin.Services {
         }
 
         /// <summary>
+        /// Returns achievements and the name of the provider that supplied them.
+        /// Used for diagnostic logging.
+        /// </summary>
+        public (List<AchievementItem> achievements, string providerName) GetAchievementsWithSource(Guid gameId) {
+            foreach (var p in _providers) {
+                if (!p.IsInstalled) continue;
+                var achievements = p.GetAchievements(gameId);
+                if (achievements != null) return (achievements, p.ProviderName);
+            }
+            return (null, null);
+        }
+
+        /// <summary>
         /// Returns all providers that are currently installed. Used by the settings UI.
         /// </summary>
         public List<IAchievementProvider> GetInstalledProviders() {

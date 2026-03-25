@@ -156,16 +156,26 @@ namespace GsPlugin.Services {
             _reflectionResolved = true;
 
             var plugin = GetPlugin();
-            if (plugin == null) return null;
+            if (plugin == null) {
+                GsLogger.Warn("[GsPlayniteAchievementsHelper] Playnite Achievements plugin not found in loaded plugins.");
+                return null;
+            }
 
             var mgrProp = plugin.GetType()
                 .GetProperty("AchievementManager", BindingFlags.Public | BindingFlags.Instance);
             _cachedManager = mgrProp?.GetValue(plugin);
-            if (_cachedManager == null) return null;
+            if (_cachedManager == null) {
+                GsLogger.Warn($"[GsPlayniteAchievementsHelper] AchievementManager property missing or null on {plugin.GetType().FullName}.");
+                return null;
+            }
 
             _getGameDataMethod = _cachedManager.GetType()
                 .GetMethod("GetGameAchievementData", BindingFlags.Public | BindingFlags.Instance, null,
                     new[] { typeof(Guid) }, null);
+            if (_getGameDataMethod == null) {
+                GsLogger.Warn($"[GsPlayniteAchievementsHelper] GetGameAchievementData(Guid) method not found on {_cachedManager.GetType().FullName}. " +
+                    "Playnite Achievements API may have changed.");
+            }
 
             return _cachedManager;
         }

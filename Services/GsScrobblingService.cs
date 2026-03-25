@@ -1067,16 +1067,54 @@ namespace GsPlugin.Services {
                 }
                 var achievementSnapshot = GsSnapshotManager.GetAchievementsSnapshot();
 
+                // Diagnostic: log provider status and game counts
+                if (_achievementHelper is GsAchievementAggregator agg) {
+                    var installed = agg.GetInstalledProviders();
+                    _logger.Info($"Achievement providers installed: {installed.Count} — " +
+                        string.Join(", ", installed.Select(p => $"{p.ProviderName} (v{p.GetVersion() ?? "?"})")));
+                }
+                _logger.Info($"Achievement diff: {allGames.Count} total games, " +
+                    $"snapshot has {achievementSnapshot.Count} entries");
+
                 var (changed, clearedIds) = await Task.Run(() => {
                     var result = new List<GameAchievementsDto>();
                     var currentGameIds = new HashSet<string>();
+                    int filteredCount = 0;
+                    int nullCount = 0;
+                    int withDataCount = 0;
 
                     foreach (var g in allGames) {
                         if (g.PluginId == Guid.Empty || !AllowedPluginIds.Contains(g.PluginId))
                             continue;
 
+                        filteredCount++;
                         var playniteId = g.Id.ToString();
-                        var achievements = _achievementHelper.GetAchievements(g.Id);
+                        List<AchievementItem> achievements;
+                        string sourceProvider = null;
+
+                        // Use source-aware lookup when available for diagnostics
+                        if (_achievementHelper is GsAchievementAggregator diagAgg) {
+                            var (achs, src) = diagAgg.GetAchievementsWithSource(g.Id);
+                            achievements = achs;
+                            sourceProvider = src;
+                        } else {
+                            achievements = _achievementHelper.GetAchievements(g.Id);
+                        }
+
+                        if (achievements == null || achievements.Count == 0) {
+                            nullCount++;
+                            // Log first 3 games with no data for diagnosis
+                            if (nullCount <= 3) {
+                                _logger.Debug($"Achievement diag: game '{g.Name}' (plugin={g.PluginId}) returned no achievements");
+                            }
+                        } else {
+                            withDataCount++;
+                            // Log first game with data to confirm which provider works
+                            if (withDataCount == 1) {
+                                _logger.Info($"Achievement diag: first hit from '{sourceProvider ?? "unknown"}' — " +
+                                    $"game '{g.Name}' has {achievements.Count} achievements");
+                            }
+                        }
 
                         // Game previously had achievements but now has none — send empty list to clear server-side
                         if ((achievements == null || achievements.Count == 0)
@@ -1148,6 +1186,10 @@ namespace GsPlugin.Services {
                             });
                         }
                     }
+
+                    _logger.Info($"Achievement diff scan: {filteredCount} eligible games, " +
+                        $"{withDataCount} with data, {nullCount} with no data, " +
+                        $"{result.Count} changed");
 
                     // IDs in snapshot but not in current library (game uninstalled/removed)
                     var cleared = achievementSnapshot.Keys

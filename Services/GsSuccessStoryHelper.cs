@@ -182,16 +182,26 @@ namespace GsPlugin.Services {
             _reflectionResolved = true;
 
             var plugin = GetSuccessStoryPlugin();
-            if (plugin == null) return null;
+            if (plugin == null) {
+                GsLogger.Warn("[GsSuccessStoryHelper] SuccessStory plugin not found in loaded plugins.");
+                return null;
+            }
 
             _dbPropInfo = plugin.GetType()
                 .GetProperty("PluginDatabase", BindingFlags.Public | BindingFlags.Instance);
             _cachedDb = _dbPropInfo?.GetValue(plugin);
-            if (_cachedDb == null) return null;
+            if (_cachedDb == null) {
+                GsLogger.Warn($"[GsSuccessStoryHelper] PluginDatabase property missing or null on {plugin.GetType().FullName}.");
+                return null;
+            }
 
             _getMethodInfo = _cachedDb.GetType()
                 .GetMethod("Get", BindingFlags.Public | BindingFlags.Instance, null,
                     new[] { typeof(Guid), typeof(bool), typeof(bool) }, null);
+            if (_getMethodInfo == null) {
+                GsLogger.Warn($"[GsSuccessStoryHelper] Get(Guid,bool,bool) method not found on {_cachedDb.GetType().FullName}. " +
+                    "SuccessStory API may have changed.");
+            }
 
             return _cachedDb;
         }
