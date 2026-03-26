@@ -10,7 +10,7 @@
 
     <!-- ── Section 2: Theme &amp; Dashboard ── -->
     <sys:String x:Key="LOCGsPluginThemeSectionTitle">Тема &amp; Панель управления</sys:String>
-    <sys:String x:Key="LOCGsPluginThemeDescription">Управляет визуальной темой, применяемой к боковой панели Game Scrobbler.</sys:String>
+    <sys:String x:Key="LOCGsPluginThemeDescription">Управляет визуальной темой, применяемой к боковой панели и к виду Game Scrobbler.</sys:String>
     <sys:String x:Key="LOCGsPluginNewDashboardExperienceLabel">Новый интерфейс панели управления</sys:String>
     <sys:String x:Key="LOCGsPluginNewDashboardExperienceTooltip">Включить новый интерфейс панели управления с расширенными возможностями.</sys:String>
 
